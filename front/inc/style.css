@@ -1,0 +1,54 @@
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    height: 100vh;
+}
+
+.nav-container {
+    width: 250px;
+    background-color: #f4f4f4;
+    padding: 20px;
+    border-right: 1px solid #ddd;
+    overflow-y: auto;
+}
+
+.content {
+    flex: 1;
+    padding: 20px;
+    background-color: #fff;
+}
+
+.tree {
+    list-style-type: none;
+    padding: 0;
+    margin: 0;
+}
+
+.tree ul {
+    list-style-type: none;
+    padding-left: 20px;
+    margin: 0;
+}
+
+.tree li {
+    margin: 5px 0;
+    cursor: pointer;
+}
+
+.tree li.folder > span::before {
+    content: "📁 ";
+}
+
+.tree li.file > span::before {
+    content: "📄 ";
+}
+
+.tree li.collapsed > ul {
+    display: none;
+}
+
+.tree li.expanded > ul {
+    display: block;
+}
