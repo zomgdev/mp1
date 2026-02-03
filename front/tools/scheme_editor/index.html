@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <title>UML / ER Diagram Prototype</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: sans-serif;
+      overflow: hidden;
+    }
+    #toolbar {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      background: #fff;
+      border: 1px solid #ccc;
+      padding: 8px;
+      display: flex;
+      gap: 6px;
+      z-index: 10;
+    }
+    button {
+      cursor: pointer;
+    }
+    canvas {
+      background: #f5f5f5;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+
+<div id="toolbar">
+  <button id="tool-select">Select</button>
+  <button id="tool-node">Entity</button>
+  <button id="tool-link">Link</button>
+</div>
+
+<canvas id="canvas"></canvas>
+
+<script>
+/* ================== SETUP ================== */
+const canvas = document.getElementById('canvas')
+const ctx = canvas.getContext('2d')
+
+function resize() {
+  canvas.width = window.innerWidth
+  canvas.height = window.innerHeight
+}
+window.addEventListener('resize', resize)
+resize()
+
+/* ================== STATE ================== */
+const state = {
+  nodes: [],
+  links: [],
+  tool: 'select',
+  selected: null,
+  dragging: false,
+  dragOffset: { x: 0, y: 0 },
+  temp: null,
+  scale: 1,
+  offset: { x: 0, y: 0 }
+}
+
+/* ================== TOOLS ================== */
+document.getElementById('tool-select').onclick = () => state.tool = 'select'
+document.getElementById('tool-node').onclick = () => state.tool = 'node'
+document.getElementById('tool-link').onclick = () => state.tool = 'link'
+
+/* ================== HELPERS ================== */
+function screenToWorld(x, y) {
+  return {
+    x: (x - state.offset.x) / state.scale,
+    y: (y - state.offset.y) / state.scale
+  }
+}
+
+function hitNode(x, y) {
+  for (let i = state.nodes.length - 1; i >= 0; i--) {
+    const n = state.nodes[i]
+    if (
+      x >= n.x && x <= n.x + n.width &&
+      y >= n.y && y <= n.y + n.height
+    ) return n
+  }
+  return null
+}
+
+function center(n) {
+  return {
+    x: n.x + n.width / 2,
+    y: n.y + n.height / 2
+  }
+}
+
+/* ================== CREATION ================== */
+function createNode(x, y) {
+  return {
+    id: crypto.randomUUID(),
+    x, y,
+    width: 180,
+    height: 120,
+    title: 'Entity',
+    fields: [
+      { name: 'id', type: 'int', meta: 'PK' }
+    ]
+  }
+}
+
+/* ================== EVENTS ================== */
+canvas.addEventListener('mousedown', e => {
+  const p = screenToWorld(e.clientX, e.clientY)
+
+  if (state.tool === 'node') {
+    state.nodes.push(createNode(p.x, p.y))
+    return
+  }
+
+  const hit = hitNode(p.x, p.y)
+
+  if (state.tool === 'select' && hit) {
+    state.selected = hit
+    state.dragging = true
+    state.dragOffset.x = p.x - hit.x
+    state.dragOffset.y = p.y - hit.y
+  }
+
+  if (state.tool === 'link' && hit) {
+    state.temp = { from: hit, to: p }
+  }
+})
+
+canvas.addEventListener('mousemove', e => {
+  const p = screenToWorld(e.clientX, e.clientY)
+
+  if (state.dragging && state.selected) {
+    state.selected.x = p.x - state.dragOffset.x
+    state.selected.y = p.y - state.dragOffset.y
+  }
+
+  if (state.temp) {
+    state.temp.to = p
+  }
+})
+
+canvas.addEventListener('mouseup', e => {
+  const p = screenToWorld(e.clientX, e.clientY)
+
+  if (state.temp) {
+    const target = hitNode(p.x, p.y)
+    if (target && target !== state.temp.from) {
+      state.links.push({
+        id: crypto.randomUUID(),
+        from: state.temp.from.id,
+        to: target.id,
+        labelFrom: '1',
+        labelTo: '*'
+      })
+    }
+    state.temp = null
+  }
+
+  state.dragging = false
+  state.selected = null
+})
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault()
+  const factor = e.deltaY < 0 ? 1.1 : 0.9
+  state.scale *= factor
+})
+
+/* ================== RENDER ================== */
+function drawNode(n) {
+  ctx.strokeStyle = '#222'
+  ctx.fillStyle = '#fff'
+  ctx.lineWidth = 1
+
+  ctx.strokeRect(n.x, n.y, n.width, n.height)
+
+  ctx.fillStyle = '#eee'
+  ctx.fillRect(n.x, n.y, n.width, 24)
+  ctx.strokeRect(n.x, n.y, n.width, 24)
+
+  ctx.fillStyle = '#000'
+  ctx.font = 'bold 12px sans-serif'
+  ctx.fillText(n.title, n.x + 6, n.y + 16)
+
+  ctx.font = '12px monospace'
+  n.fields.forEach((f, i) => {
+    ctx.fillText(
+      `${f.name}: ${f.type}${f.meta ? ' [' + f.meta + ']' : ''}`,
+      n.x + 6,
+      n.y + 40 + i * 14
+    )
+  })
+}
+
+function drawLink(l) {
+  const a = state.nodes.find(n => n.id === l.from)
+  const b = state.nodes.find(n => n.id === l.to)
+  if (!a || !b) return
+
+  const p1 = center(a)
+  const p2 = center(b)
+
+  ctx.beginPath()
+  ctx.moveTo(p1.x, p1.y)
+  ctx.lineTo(p2.x, p2.y)
+  ctx.stroke()
+
+  ctx.font = '12px sans-serif'
+  ctx.fillText(l.labelFrom, p1.x + 4, p1.y - 4)
+  ctx.fillText(l.labelTo, p2.x + 4, p2.y - 4)
+}
+
+function render() {
+  ctx.save()
+  ctx.setTransform(
+    state.scale, 0, 0,
+    state.scale,
+    state.offset.x,
+    state.offset.y
+  )
+
+  ctx.clearRect(-10000, -10000, 20000, 20000)
+
+  state.links.forEach(drawLink)
+  state.nodes.forEach(drawNode)
+
+  if (state.temp) {
+    const p1 = center(state.temp.from)
+    ctx.beginPath()
+    ctx.moveTo(p1.x, p1.y)
+    ctx.lineTo(state.temp.to.x, state.temp.to.y)
+    ctx.setLineDash([5, 5])
+    ctx.stroke()
+    ctx.setLineDash([])
+  }
+
+  ctx.restore()
+  requestAnimationFrame(render)
+}
+
+render()
+</script>
+
+</body>
+</html>
