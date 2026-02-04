@@ -198,22 +198,27 @@ function drawNode(n) {
   })
 }
 
-function drawLink(l) {
-  const a = state.nodes.find(n => n.id === l.from)
-  const b = state.nodes.find(n => n.id === l.to)
+function drawERLink(ctx, link, state) {
+  const a = state.nodes.find(n => n.id === link.from)
+  const b = state.nodes.find(n => n.id === link.to)
   if (!a || !b) return
 
-  const p1 = center(a)
-  const p2 = center(b)
+  const ca = center(a)
+  const cb = center(b)
+
+  const p1 = intersection(a, cb)
+  const p2 = intersection(b, ca)
 
   ctx.beginPath()
   ctx.moveTo(p1.x, p1.y)
   ctx.lineTo(p2.x, p2.y)
   ctx.stroke()
 
-  ctx.font = '12px sans-serif'
-  ctx.fillText(l.labelFrom, p1.x + 4, p1.y - 4)
-  ctx.fillText(l.labelTo, p2.x + 4, p2.y - 4)
+  const angleAB = Math.atan2(p2.y - p1.y, p2.x - p1.x)
+  const angleBA = angleAB + Math.PI
+
+  drawCardinality(ctx, link.fromCardinality, p1.x, p1.y, angleAB)
+  drawCardinality(ctx, link.toCardinality, p2.x, p2.y, angleBA)
 }
 
 function render() {
@@ -227,7 +232,7 @@ function render() {
 
   ctx.clearRect(-10000, -10000, 20000, 20000)
 
-  state.links.forEach(drawLink)
+  state.links.forEach(drawERLink)
   state.nodes.forEach(drawNode)
 
   if (state.temp) {
