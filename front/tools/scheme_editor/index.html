@@ -1,23 +1,34 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-<meta charset="UTF-8" />
-<title>ER Diagram – Crow's Foot</title>
-<style>
-  body { margin: 0; overflow: hidden; font-family: sans-serif; }
-  #toolbar {
-    position: fixed;
-    top: 10px;
-    left: 10px;
-    background: #fff;
-    border: 1px solid #ccc;
-    padding: 6px;
-    display: flex;
-    gap: 6px;
-    z-index: 10;
-  }
-  canvas { background: #f4f4f4; display: block; }
-</style>
+  <meta charset="UTF-8" />
+  <title>ER Diagram – Crow's Foot</title>
+  <style>
+    body { margin: 0; overflow: hidden; font-family: sans-serif; }
+    #toolbar {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      background: #fff;
+      border: 1px solid #ccc;
+      padding: 6px;
+      display: flex;
+      gap: 6px;
+      z-index: 10;
+    }
+    canvas { background: #f4f4f4; display: block; }
+    #cardinality-selector {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #fff;
+      border: 1px solid #ccc;
+      padding: 8px;
+      display: none;
+      z-index: 20;
+    }
+  </style>
 </head>
 <body>
 
@@ -25,6 +36,17 @@
   <button onclick="state.tool='select'">Select</button>
   <button onclick="state.tool='node'">Entity</button>
   <button onclick="state.tool='link'">Link</button>
+</div>
+
+<!-- Кардинальность выбора -->
+<div id="cardinality-selector">
+  <label for="cardinality">Cardinality:</label>
+  <select id="cardinality">
+    <option value="one">One</option>
+    <option value="many">Many</option>
+    <option value="zero-one">Zero or One</option>
+  </select>
+  <button onclick="confirmLink()">Confirm</button>
 </div>
 
 <canvas id="canvas"></canvas>
@@ -50,7 +72,8 @@ const state = {
   dragging: false,
   dragOffset: { x: 0, y: 0 },
   temp: null,
-  scale: 1
+  scale: 1,
+  linkTemp: null
 }
 
 /* ================= HELPERS ================= */
@@ -197,6 +220,8 @@ canvas.onmousedown = e => {
 
   if (state.tool === 'link' && hit) {
     state.temp = { from: hit, to: p }
+    document.getElementById('cardinality-selector').style.display = 'block'
+    state.linkTemp = { from: hit }
   }
 }
 
@@ -221,11 +246,12 @@ canvas.onmouseup = e => {
         id: crypto.randomUUID(),
         from: state.temp.from.id,
         to: target.id,
-        fromCardinality: 'one',
+        fromCardinality: document.getElementById('cardinality').value,
         toCardinality: 'many'
       })
     }
     state.temp = null
+    document.getElementById('cardinality-selector').style.display = 'none'
   }
 
   state.dragging = false
@@ -258,6 +284,23 @@ function loop() {
   requestAnimationFrame(loop)
 }
 loop()
+
+/* ================= CONFIRM LINK ================= */
+function confirmLink() {
+  document.getElementById('cardinality-selector').style.display = 'none'
+  const fromCardinality = document.getElementById('cardinality').value
+  const target = state.temp ? hitNode(state.temp.to.x, state.temp.to.y) : null
+  if (target) {
+    state.links.push({
+      id: crypto.randomUUID(),
+      from: state.temp.from.id,
+      to: target.id,
+      fromCardinality: fromCardinality,
+      toCardinality: 'many'
+    })
+  }
+  state.temp = null
+}
 </script>
 
 </body>
