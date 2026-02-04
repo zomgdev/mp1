@@ -197,6 +197,69 @@ function drawNode(n) {
     )
   })
 }
+function intersection(rect, target) {
+  const cx = rect.x + rect.width / 2
+  const cy = rect.y + rect.height / 2
+  const dx = target.x - cx
+  const dy = target.y - cy
+
+  const scaleX = rect.width / 2 / Math.abs(dx)
+  const scaleY = rect.height / 2 / Math.abs(dy)
+  const scale = Math.min(scaleX, scaleY)
+
+  return {
+    x: cx + dx * scale,
+    y: cy + dy * scale
+  }
+}
+
+function drawCrowFoot(ctx, x, y, angle) {
+  const size = 10
+  const spread = Math.PI / 6
+
+  for (let dir of [-1, 0, 1]) {
+    ctx.beginPath()
+    ctx.moveTo(x, y)
+    ctx.lineTo(
+      x + Math.cos(angle + spread * dir) * size,
+      y + Math.sin(angle + spread * dir) * size
+    )
+    ctx.stroke()
+  }
+}
+function drawOne(ctx, x, y, angle) {
+  const size = 10
+  const a = angle + Math.PI / 2
+
+  ctx.beginPath()
+  ctx.moveTo(
+    x + Math.cos(a) * size,
+    y + Math.sin(a) * size
+  )
+  ctx.lineTo(
+    x - Math.cos(a) * size,
+    y - Math.sin(a) * size
+  )
+  ctx.stroke()
+}
+function drawZero(ctx, x, y) {
+  ctx.beginPath()
+  ctx.arc(x, y, 4, 0, Math.PI * 2)
+  ctx.stroke()
+}
+function drawCardinality(ctx, type, x, y, angle) {
+  if (type === 'one') {
+    drawOne(ctx, x, y, angle)
+  }
+  if (type === 'many') {
+    drawCrowFoot(ctx, x, y, angle)
+  }
+  if (type === 'zero-one') {
+    drawZero(ctx, x, y)
+    drawOne(ctx, x, y, angle)
+  }
+}
+
 
 function drawERLink(ctx, link, state) {
   const a = state.nodes.find(n => n.id === link.from)
