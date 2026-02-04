@@ -38,15 +38,24 @@
   <button onclick="state.tool='link'">Link</button>
 </div>
 
-<!-- Кардинальность выбора -->
 <div id="cardinality-selector">
-  <label for="cardinality">Cardinality:</label>
-  <select id="cardinality">
-    <option value="one">One</option>
-    <option value="many">Many</option>
-    <option value="zero-one">Zero or One</option>
-  </select>
-  <button onclick="confirmLink()">Confirm</button>
+  <div>
+    <label>From:</label>
+    <select id="from-cardinality">
+      <option value="one">One</option>
+      <option value="many">Many</option>
+      <option value="zero-one">Zero or One</option>
+    </select>
+  </div>
+  <div style="margin-top:6px">
+    <label>To:</label>
+    <select id="to-cardinality">
+      <option value="one">One</option>
+      <option value="many">Many</option>
+      <option value="zero-one">Zero or One</option>
+    </select>
+  </div>
+  <button style="margin-top:8px" onclick="confirmLink()">Confirm</button>
 </div>
 
 <canvas id="canvas"></canvas>
@@ -69,11 +78,11 @@ const state = {
   links: [],
   tool: 'select',
   selected: null,
+  hovered: null,
   dragging: false,
   dragOffset: { x: 0, y: 0 },
-  temp: null,
   scale: 1,
-  linkTemp: null
+  linkDraft: null
 }
 
 /* ================= HELPERS ================= */
@@ -94,17 +103,20 @@ function center(n) {
   return { x: n.x + n.width / 2, y: n.y + n.height / 2 }
 }
 
+function calcNodeHeight(node) {
+  return 24 + 16 + node.fields.length * 14
+}
+
 /* ================= GEOMETRY ================= */
 function intersection(rect, target) {
   const cx = rect.x + rect.width / 2
   const cy = rect.y + rect.height / 2
   const dx = target.x - cx
   const dy = target.y - cy
-
-  const scaleX = rect.width / 2 / Math.abs(dx)
-  const scaleY = rect.height / 2 / Math.abs(dy)
-  const scale = Math.min(scaleX, scaleY)
-
+  const scale = Math.min(
+    rect.width / 2 / Math.abs(dx),
+    rect.height / 2 / Math.abs(dy)
+  )
   return { x: cx + dx * scale, y: cy + dy * scale }
 }
 
@@ -149,7 +161,10 @@ function drawCardinality(ctx, type, x, y, angle) {
 
 /* ================= DRAW ================= */
 function drawNode(n) {
-  ctx.strokeStyle = '#222'
+  n.height = calcNodeHeight(n)
+
+  ctx.strokeStyle = n === state.hovered ? '#1e88e5' : '#222'
+  ctx.lineWidth = n === state.hovered ? 2 : 1
   ctx.fillStyle = '#fff'
   ctx.strokeRect(n.x, n.y, n.width, n.height)
 
@@ -169,6 +184,8 @@ function drawNode(n) {
       n.y + 40 + i * 14
     )
   })
+
+  ctx.lineWidth = 1
 }
 
 function drawLink(l) {
@@ -176,11 +193,8 @@ function drawLink(l) {
   const b = state.nodes.find(n => n.id === l.to)
   if (!a || !b) return
 
-  const ca = center(a)
-  const cb = center(b)
-
-  const p1 = intersection(a, cb)
-  const p2 = intersection(b, ca)
+  const p1 = intersection(a, center(b))
+  const p2 = intersection(b, center(a))
 
   ctx.beginPath()
   ctx.moveTo(p1.x, p1.y)
@@ -202,7 +216,6 @@ canvas.onmousedown = e => {
       x: p.x,
       y: p.y,
       width: 180,
-      height: 120,
       title: 'Entity',
       fields: [{ name: 'id', type: 'int', meta: 'PK' }]
     })
@@ -219,49 +232,82 @@ canvas.onmousedown = e => {
   }
 
   if (state.tool === 'link' && hit) {
-    state.temp = { from: hit, to: p }
+    state.linkDraft = { from: hit, toNode: null, toPoint: null }
     document.getElementById('cardinality-selector').style.display = 'block'
-    state.linkTemp = { from: hit }
   }
 }
 
 canvas.onmousemove = e => {
   const p = screenToWorld(e.offsetX, e.offsetY)
+  state.hovered = hitNode(p.x, p.y)
+
+  if (state.linkDraft) state.linkDraft.toPoint = p
 
   if (state.dragging && state.selected) {
     state.selected.x = p.x - state.dragOffset.x
     state.selected.y = p.y - state.dragOffset.y
   }
-
-  if (state.temp) state.temp.to = p
 }
 
 canvas.onmouseup = e => {
   const p = screenToWorld(e.offsetX, e.offsetY)
-
-  if (state.temp) {
+  if (state.linkDraft) {
     const target = hitNode(p.x, p.y)
-    if (target && target !== state.temp.from) {
-      state.links.push({
-        id: crypto.randomUUID(),
-        from: state.temp.from.id,
-        to: target.id,
-        fromCardinality: document.getElementById('cardinality').value,
-        toCardinality: 'many'
-      })
-    }
-    state.temp = null
-    document.getElementById('cardinality-selector').style.display = 'none'
+    if (target && target !== state.linkDraft.from)
+      state.linkDraft.toNode = target
   }
-
   state.dragging = false
   state.selected = null
 }
 
-canvas.onwheel = e => {
-  e.preventDefault()
-  state.scale *= e.deltaY < 0 ? 1.1 : 0.9
+canvas.ondblclick = e => {
+  const p = screenToWorld(e.offsetX, e.offsetY)
+  const node = hitNode(p.x, p.y)
+  if (!node) return
+
+  if (p.y <= node.y + 24) {
+    const title = prompt('Entity name:', node.title)
+    if (title) node.title = title.trim()
+    return
+  }
+
+  const index = Math.floor((p.y - (node.y + 40)) / 14)
+  if (index >= 0 && index < node.fields.length) {
+    editField(node, index)
+  }
 }
+
+function editField(node, index) {
+  const f = node.fields[index]
+  const current =
+    `${f.name}:${f.type}${f.meta ? ' [' + f.meta + ']' : ''}`
+
+  const value = prompt('Field (name:type [meta]):', current)
+  if (!value) return
+
+  const match = value.match(/^(\w+)\s*:\s*(\w+)(?:\s*\[(.+)\])?$/)
+  if (!match) {
+    alert('Format: name:type [PK|FK]')
+    return
+  }
+
+  f.name = match[1]
+  f.type = match[2]
+  f.meta = match[3] || null
+}
+
+canvas.oncontextmenu = e => {
+  e.preventDefault()
+  state.linkDraft = null
+  document.getElementById('cardinality-selector').style.display = 'none'
+}
+
+addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    state.linkDraft = null
+    document.getElementById('cardinality-selector').style.display = 'none'
+  }
+})
 
 /* ================= LOOP ================= */
 function loop() {
@@ -271,12 +317,12 @@ function loop() {
   state.links.forEach(drawLink)
   state.nodes.forEach(drawNode)
 
-  if (state.temp) {
-    const c = center(state.temp.from)
+  if (state.linkDraft && state.linkDraft.toPoint) {
+    const c = center(state.linkDraft.from)
     ctx.setLineDash([5, 5])
     ctx.beginPath()
     ctx.moveTo(c.x, c.y)
-    ctx.lineTo(state.temp.to.x, state.temp.to.y)
+    ctx.lineTo(state.linkDraft.toPoint.x, state.linkDraft.toPoint.y)
     ctx.stroke()
     ctx.setLineDash([])
   }
@@ -288,18 +334,21 @@ loop()
 /* ================= CONFIRM LINK ================= */
 function confirmLink() {
   document.getElementById('cardinality-selector').style.display = 'none'
-  const fromCardinality = document.getElementById('cardinality').value
-  const target = state.temp ? hitNode(state.temp.to.x, state.temp.to.y) : null
-  if (target) {
-    state.links.push({
-      id: crypto.randomUUID(),
-      from: state.temp.from.id,
-      to: target.id,
-      fromCardinality: fromCardinality,
-      toCardinality: 'many'
-    })
+
+  if (!state.linkDraft || !state.linkDraft.toNode) {
+    state.linkDraft = null
+    return
   }
-  state.temp = null
+
+  state.links.push({
+    id: crypto.randomUUID(),
+    from: state.linkDraft.from.id,
+    to: state.linkDraft.toNode.id,
+    fromCardinality: document.getElementById('from-cardinality').value,
+    toCardinality: document.getElementById('to-cardinality').value
+  })
+
+  state.linkDraft = null
 }
 </script>
 
