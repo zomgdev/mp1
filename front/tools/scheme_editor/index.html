@@ -1,57 +1,47 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8" />
-  <title>UML / ER Diagram Prototype</title>
-  <style>
-    body {
-      margin: 0;
-      font-family: sans-serif;
-      overflow: hidden;
-    }
-    #toolbar {
-      position: fixed;
-      top: 10px;
-      left: 10px;
-      background: #fff;
-      border: 1px solid #ccc;
-      padding: 8px;
-      display: flex;
-      gap: 6px;
-      z-index: 10;
-    }
-    button {
-      cursor: pointer;
-    }
-    canvas {
-      background: #f5f5f5;
-      display: block;
-    }
-  </style>
+<meta charset="UTF-8" />
+<title>ER Diagram – Crow's Foot</title>
+<style>
+  body { margin: 0; overflow: hidden; font-family: sans-serif; }
+  #toolbar {
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    background: #fff;
+    border: 1px solid #ccc;
+    padding: 6px;
+    display: flex;
+    gap: 6px;
+    z-index: 10;
+  }
+  canvas { background: #f4f4f4; display: block; }
+</style>
 </head>
 <body>
 
 <div id="toolbar">
-  <button id="tool-select">Select</button>
-  <button id="tool-node">Entity</button>
-  <button id="tool-link">Link</button>
+  <button onclick="state.tool='select'">Select</button>
+  <button onclick="state.tool='node'">Entity</button>
+  <button onclick="state.tool='link'">Link</button>
 </div>
 
 <canvas id="canvas"></canvas>
 
 <script>
-/* ================== SETUP ================== */
+/* ================= SETUP ================= */
 const canvas = document.getElementById('canvas')
 const ctx = canvas.getContext('2d')
 
 function resize() {
-  canvas.width = window.innerWidth
-  canvas.height = window.innerHeight
+  canvas.width = innerWidth
+  canvas.height = innerHeight
 }
-window.addEventListener('resize', resize)
+addEventListener('resize', resize)
 resize()
 
-/* ================== STATE ================== */
+/* ================= STATE ================= */
 const state = {
   nodes: [],
   links: [],
@@ -60,124 +50,84 @@ const state = {
   dragging: false,
   dragOffset: { x: 0, y: 0 },
   temp: null,
-  scale: 1,
-  offset: { x: 0, y: 0 }
+  scale: 1
 }
 
-/* ================== TOOLS ================== */
-document.getElementById('tool-select').onclick = () => state.tool = 'select'
-document.getElementById('tool-node').onclick = () => state.tool = 'node'
-document.getElementById('tool-link').onclick = () => state.tool = 'link'
-
-/* ================== HELPERS ================== */
+/* ================= HELPERS ================= */
 function screenToWorld(x, y) {
-  return {
-    x: (x - state.offset.x) / state.scale,
-    y: (y - state.offset.y) / state.scale
-  }
+  return { x: x / state.scale, y: y / state.scale }
 }
 
 function hitNode(x, y) {
   for (let i = state.nodes.length - 1; i >= 0; i--) {
     const n = state.nodes[i]
-    if (
-      x >= n.x && x <= n.x + n.width &&
-      y >= n.y && y <= n.y + n.height
-    ) return n
+    if (x >= n.x && x <= n.x + n.width &&
+        y >= n.y && y <= n.y + n.height) return n
   }
   return null
 }
 
 function center(n) {
-  return {
-    x: n.x + n.width / 2,
-    y: n.y + n.height / 2
+  return { x: n.x + n.width / 2, y: n.y + n.height / 2 }
+}
+
+/* ================= GEOMETRY ================= */
+function intersection(rect, target) {
+  const cx = rect.x + rect.width / 2
+  const cy = rect.y + rect.height / 2
+  const dx = target.x - cx
+  const dy = target.y - cy
+
+  const scaleX = rect.width / 2 / Math.abs(dx)
+  const scaleY = rect.height / 2 / Math.abs(dy)
+  const scale = Math.min(scaleX, scaleY)
+
+  return { x: cx + dx * scale, y: cy + dy * scale }
+}
+
+/* ================= CROW FOOT ================= */
+function drawCrowFoot(ctx, x, y, angle) {
+  const size = 10
+  const spread = Math.PI / 6
+  for (let i of [-1, 0, 1]) {
+    ctx.beginPath()
+    ctx.moveTo(x, y)
+    ctx.lineTo(
+      x + Math.cos(angle + spread * i) * size,
+      y + Math.sin(angle + spread * i) * size
+    )
+    ctx.stroke()
   }
 }
 
-/* ================== CREATION ================== */
-function createNode(x, y) {
-  return {
-    id: crypto.randomUUID(),
-    x, y,
-    width: 180,
-    height: 120,
-    title: 'Entity',
-    fields: [
-      { name: 'id', type: 'int', meta: 'PK' }
-    ]
+function drawOne(ctx, x, y, angle) {
+  const size = 8
+  const a = angle + Math.PI / 2
+  ctx.beginPath()
+  ctx.moveTo(x + Math.cos(a) * size, y + Math.sin(a) * size)
+  ctx.lineTo(x - Math.cos(a) * size, y - Math.sin(a) * size)
+  ctx.stroke()
+}
+
+function drawZero(ctx, x, y) {
+  ctx.beginPath()
+  ctx.arc(x, y, 4, 0, Math.PI * 2)
+  ctx.stroke()
+}
+
+function drawCardinality(ctx, type, x, y, angle) {
+  if (type === 'one') drawOne(ctx, x, y, angle)
+  if (type === 'many') drawCrowFoot(ctx, x, y, angle)
+  if (type === 'zero-one') {
+    drawZero(ctx, x, y)
+    drawOne(ctx, x, y, angle)
   }
 }
 
-/* ================== EVENTS ================== */
-canvas.addEventListener('mousedown', e => {
-  const p = screenToWorld(e.clientX, e.clientY)
-
-  if (state.tool === 'node') {
-    state.nodes.push(createNode(p.x, p.y))
-    return
-  }
-
-  const hit = hitNode(p.x, p.y)
-
-  if (state.tool === 'select' && hit) {
-    state.selected = hit
-    state.dragging = true
-    state.dragOffset.x = p.x - hit.x
-    state.dragOffset.y = p.y - hit.y
-  }
-
-  if (state.tool === 'link' && hit) {
-    state.temp = { from: hit, to: p }
-  }
-})
-
-canvas.addEventListener('mousemove', e => {
-  const p = screenToWorld(e.clientX, e.clientY)
-
-  if (state.dragging && state.selected) {
-    state.selected.x = p.x - state.dragOffset.x
-    state.selected.y = p.y - state.dragOffset.y
-  }
-
-  if (state.temp) {
-    state.temp.to = p
-  }
-})
-
-canvas.addEventListener('mouseup', e => {
-  const p = screenToWorld(e.clientX, e.clientY)
-
-  if (state.temp) {
-    const target = hitNode(p.x, p.y)
-    if (target && target !== state.temp.from) {
-      state.links.push({
-        id: crypto.randomUUID(),
-        from: state.temp.from.id,
-        to: target.id,
-        labelFrom: '1',
-        labelTo: '*'
-      })
-    }
-    state.temp = null
-  }
-
-  state.dragging = false
-  state.selected = null
-})
-
-canvas.addEventListener('wheel', e => {
-  e.preventDefault()
-  const factor = e.deltaY < 0 ? 1.1 : 0.9
-  state.scale *= factor
-})
-
-/* ================== RENDER ================== */
+/* ================= DRAW ================= */
 function drawNode(n) {
   ctx.strokeStyle = '#222'
   ctx.fillStyle = '#fff'
-  ctx.lineWidth = 1
-
   ctx.strokeRect(n.x, n.y, n.width, n.height)
 
   ctx.fillStyle = '#eee'
@@ -197,73 +147,10 @@ function drawNode(n) {
     )
   })
 }
-function intersection(rect, target) {
-  const cx = rect.x + rect.width / 2
-  const cy = rect.y + rect.height / 2
-  const dx = target.x - cx
-  const dy = target.y - cy
 
-  const scaleX = rect.width / 2 / Math.abs(dx)
-  const scaleY = rect.height / 2 / Math.abs(dy)
-  const scale = Math.min(scaleX, scaleY)
-
-  return {
-    x: cx + dx * scale,
-    y: cy + dy * scale
-  }
-}
-
-function drawCrowFoot(ctx, x, y, angle) {
-  const size = 10
-  const spread = Math.PI / 6
-
-  for (let dir of [-1, 0, 1]) {
-    ctx.beginPath()
-    ctx.moveTo(x, y)
-    ctx.lineTo(
-      x + Math.cos(angle + spread * dir) * size,
-      y + Math.sin(angle + spread * dir) * size
-    )
-    ctx.stroke()
-  }
-}
-function drawOne(ctx, x, y, angle) {
-  const size = 10
-  const a = angle + Math.PI / 2
-
-  ctx.beginPath()
-  ctx.moveTo(
-    x + Math.cos(a) * size,
-    y + Math.sin(a) * size
-  )
-  ctx.lineTo(
-    x - Math.cos(a) * size,
-    y - Math.sin(a) * size
-  )
-  ctx.stroke()
-}
-function drawZero(ctx, x, y) {
-  ctx.beginPath()
-  ctx.arc(x, y, 4, 0, Math.PI * 2)
-  ctx.stroke()
-}
-function drawCardinality(ctx, type, x, y, angle) {
-  if (type === 'one') {
-    drawOne(ctx, x, y, angle)
-  }
-  if (type === 'many') {
-    drawCrowFoot(ctx, x, y, angle)
-  }
-  if (type === 'zero-one') {
-    drawZero(ctx, x, y)
-    drawOne(ctx, x, y, angle)
-  }
-}
-
-
-function drawERLink(ctx, link, state) {
-  const a = state.nodes.find(n => n.id === link.from)
-  const b = state.nodes.find(n => n.id === link.to)
+function drawLink(l) {
+  const a = state.nodes.find(n => n.id === l.from)
+  const b = state.nodes.find(n => n.id === l.to)
   if (!a || !b) return
 
   const ca = center(a)
@@ -277,42 +164,100 @@ function drawERLink(ctx, link, state) {
   ctx.lineTo(p2.x, p2.y)
   ctx.stroke()
 
-  const angleAB = Math.atan2(p2.y - p1.y, p2.x - p1.x)
-  const angleBA = angleAB + Math.PI
-
-  drawCardinality(ctx, link.fromCardinality, p1.x, p1.y, angleAB)
-  drawCardinality(ctx, link.toCardinality, p2.x, p2.y, angleBA)
+  const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x)
+  drawCardinality(ctx, l.fromCardinality, p1.x, p1.y, angle)
+  drawCardinality(ctx, l.toCardinality, p2.x, p2.y, angle + Math.PI)
 }
 
-function render() {
-  ctx.save()
-  ctx.setTransform(
-    state.scale, 0, 0,
-    state.scale,
-    state.offset.x,
-    state.offset.y
-  )
+/* ================= EVENTS ================= */
+canvas.onmousedown = e => {
+  const p = screenToWorld(e.offsetX, e.offsetY)
 
-  ctx.clearRect(-10000, -10000, 20000, 20000)
+  if (state.tool === 'node') {
+    state.nodes.push({
+      id: crypto.randomUUID(),
+      x: p.x,
+      y: p.y,
+      width: 180,
+      height: 120,
+      title: 'Entity',
+      fields: [{ name: 'id', type: 'int', meta: 'PK' }]
+    })
+    return
+  }
 
-  state.links.forEach(drawERLink)
+  const hit = hitNode(p.x, p.y)
+
+  if (state.tool === 'select' && hit) {
+    state.selected = hit
+    state.dragging = true
+    state.dragOffset.x = p.x - hit.x
+    state.dragOffset.y = p.y - hit.y
+  }
+
+  if (state.tool === 'link' && hit) {
+    state.temp = { from: hit, to: p }
+  }
+}
+
+canvas.onmousemove = e => {
+  const p = screenToWorld(e.offsetX, e.offsetY)
+
+  if (state.dragging && state.selected) {
+    state.selected.x = p.x - state.dragOffset.x
+    state.selected.y = p.y - state.dragOffset.y
+  }
+
+  if (state.temp) state.temp.to = p
+}
+
+canvas.onmouseup = e => {
+  const p = screenToWorld(e.offsetX, e.offsetY)
+
+  if (state.temp) {
+    const target = hitNode(p.x, p.y)
+    if (target && target !== state.temp.from) {
+      state.links.push({
+        id: crypto.randomUUID(),
+        from: state.temp.from.id,
+        to: target.id,
+        fromCardinality: 'one',
+        toCardinality: 'many'
+      })
+    }
+    state.temp = null
+  }
+
+  state.dragging = false
+  state.selected = null
+}
+
+canvas.onwheel = e => {
+  e.preventDefault()
+  state.scale *= e.deltaY < 0 ? 1.1 : 0.9
+}
+
+/* ================= LOOP ================= */
+function loop() {
+  ctx.setTransform(state.scale, 0, 0, state.scale, 0, 0)
+  ctx.clearRect(0, 0, canvas.width / state.scale, canvas.height / state.scale)
+
+  state.links.forEach(drawLink)
   state.nodes.forEach(drawNode)
 
   if (state.temp) {
-    const p1 = center(state.temp.from)
-    ctx.beginPath()
-    ctx.moveTo(p1.x, p1.y)
-    ctx.lineTo(state.temp.to.x, state.temp.to.y)
+    const c = center(state.temp.from)
     ctx.setLineDash([5, 5])
+    ctx.beginPath()
+    ctx.moveTo(c.x, c.y)
+    ctx.lineTo(state.temp.to.x, state.temp.to.y)
     ctx.stroke()
     ctx.setLineDash([])
   }
 
-  ctx.restore()
-  requestAnimationFrame(render)
+  requestAnimationFrame(loop)
 }
-
-render()
+loop()
 </script>
 
 </body>
