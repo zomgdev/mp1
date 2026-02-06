@@ -4,7 +4,11 @@
   <meta charset="UTF-8" />
   <title>ER Diagram – Crow's Foot</title>
   <style>
-    body { margin: 0; overflow: hidden; font-family: sans-serif; }
+    body {
+      margin: 0;
+      overflow: hidden;
+      font-family: sans-serif;
+    }
     #toolbar {
       position: fixed;
       top: 10px;
@@ -15,47 +19,23 @@
       display: flex;
       gap: 6px;
       z-index: 10;
+      user-select: none;
     }
-    canvas { background: #f4f4f4; display: block; }
-    #cardinality-selector {
-      position: fixed;
-      bottom: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: #fff;
-      border: 1px solid #ccc;
-      padding: 8px;
-      display: none;
-      z-index: 20;
+    canvas {
+      background: #f4f4f4;
+      display: block;
+    }
+    button {
+      cursor: pointer;
     }
   </style>
 </head>
 <body>
 
 <div id="toolbar">
-  <button onclick="state.tool='select'">Select</button>
-  <button onclick="state.tool='node'">Entity</button>
-  <button onclick="state.tool='link'">Link</button>
-</div>
-
-<div id="cardinality-selector">
-  <div>
-    <label>From:</label>
-    <select id="from-cardinality">
-      <option value="one">One</option>
-      <option value="many">Many</option>
-      <option value="zero-one">Zero or One</option>
-    </select>
-  </div>
-  <div style="margin-top:6px">
-    <label>To:</label>
-    <select id="to-cardinality">
-      <option value="one">One</option>
-      <option value="many">Many</option>
-      <option value="zero-one">Zero or One</option>
-    </select>
-  </div>
-  <button style="margin-top:8px" onclick="confirmLink()">Confirm</button>
+  <button onclick="setTool('select')">Select</button>
+  <button onclick="setTool('node')">Entity</button>
+  <button onclick="setTool('link')">Link</button>
 </div>
 
 <canvas id="canvas"></canvas>
@@ -65,9 +45,12 @@
 const canvas = document.getElementById('canvas')
 const ctx = canvas.getContext('2d')
 
+let bgPattern = null
+
 function resize() {
   canvas.width = innerWidth
   canvas.height = innerHeight
+  bgPattern = null
 }
 addEventListener('resize', resize)
 resize()
@@ -78,18 +61,46 @@ const state = {
   links: [],
   tool: 'select',
   selected: null,
-  hovered: null,
   dragging: false,
   dragOffset: { x: 0, y: 0 },
-  scale: 1,
-  linkDraft: null
+  linkDraft: null // { from, toPoint }
+}
+
+function setTool(tool) {
+  state.tool = tool
+  if (tool !== 'link') state.linkDraft = null
+}
+
+/* ================= BACKGROUND DOT GRID ================= */
+const CM_PX = 37.8
+const GRID_SPACING = Math.round(CM_PX)
+const DOT_RADIUS = 1
+
+function makeDotPattern() {
+  const p = document.createElement('canvas')
+  p.width = GRID_SPACING
+  p.height = GRID_SPACING
+  const pctx = p.getContext('2d')
+
+  pctx.clearRect(0, 0, p.width, p.height)
+  pctx.beginPath()
+  pctx.arc(GRID_SPACING / 2, GRID_SPACING / 2, DOT_RADIUS, 0, Math.PI * 2)
+  pctx.fillStyle = 'rgba(0,0,0,0.18)'
+  pctx.fill()
+
+  return ctx.createPattern(p, 'repeat')
+}
+
+function drawBackgroundDots() {
+  if (!bgPattern) bgPattern = makeDotPattern()
+  ctx.save()
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.fillStyle = bgPattern
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.restore()
 }
 
 /* ================= HELPERS ================= */
-function screenToWorld(x, y) {
-  return { x: x / state.scale, y: y / state.scale }
-}
-
 function hitNode(x, y) {
   for (let i = state.nodes.length - 1; i >= 0; i--) {
     const n = state.nodes[i]
@@ -103,8 +114,8 @@ function center(n) {
   return { x: n.x + n.width / 2, y: n.y + n.height / 2 }
 }
 
-function calcNodeHeight(node) {
-  return 24 + 16 + node.fields.length * 14
+function calcNodeHeight(n) {
+  return 24 + 16 + n.fields.length * 14
 }
 
 /* ================= GEOMETRY ================= */
@@ -113,49 +124,46 @@ function intersection(rect, target) {
   const cy = rect.y + rect.height / 2
   const dx = target.x - cx
   const dy = target.y - cy
-  const scale = Math.min(
-    rect.width / 2 / Math.abs(dx),
-    rect.height / 2 / Math.abs(dy)
-  )
+  const adx = Math.abs(dx) || 0.00001
+  const ady = Math.abs(dy) || 0.00001
+  const scale = Math.min(rect.width / 2 / adx, rect.height / 2 / ady)
   return { x: cx + dx * scale, y: cy + dy * scale }
 }
 
-/* ================= CROW FOOT ================= */
-function drawCrowFoot(ctx, x, y, angle) {
-  const size = 10
-  const spread = Math.PI / 6
+/* ================= CARDINALITY ================= */
+function drawCrowFoot(x, y, angle) {
+  const s = 10, sp = Math.PI / 6
   for (let i of [-1, 0, 1]) {
     ctx.beginPath()
     ctx.moveTo(x, y)
     ctx.lineTo(
-      x + Math.cos(angle + spread * i) * size,
-      y + Math.sin(angle + spread * i) * size
+      x + Math.cos(angle + sp * i) * s,
+      y + Math.sin(angle + sp * i) * s
     )
     ctx.stroke()
   }
 }
 
-function drawOne(ctx, x, y, angle) {
-  const size = 8
-  const a = angle + Math.PI / 2
+function drawOne(x, y, angle) {
+  const s = 8, a = angle + Math.PI / 2
   ctx.beginPath()
-  ctx.moveTo(x + Math.cos(a) * size, y + Math.sin(a) * size)
-  ctx.lineTo(x - Math.cos(a) * size, y - Math.sin(a) * size)
+  ctx.moveTo(x + Math.cos(a) * s, y + Math.sin(a) * s)
+  ctx.lineTo(x - Math.cos(a) * s, y - Math.sin(a) * s)
   ctx.stroke()
 }
 
-function drawZero(ctx, x, y) {
+function drawZero(x, y) {
   ctx.beginPath()
   ctx.arc(x, y, 4, 0, Math.PI * 2)
   ctx.stroke()
 }
 
-function drawCardinality(ctx, type, x, y, angle) {
-  if (type === 'one') drawOne(ctx, x, y, angle)
-  if (type === 'many') drawCrowFoot(ctx, x, y, angle)
+function drawCardinality(type, x, y, angle) {
+  if (type === 'one') drawOne(x, y, angle)
+  if (type === 'many') drawCrowFoot(x, y, angle)
   if (type === 'zero-one') {
-    drawZero(ctx, x, y)
-    drawOne(ctx, x, y, angle)
+    drawZero(x, y)
+    drawOne(x, y, angle)
   }
 }
 
@@ -163,8 +171,7 @@ function drawCardinality(ctx, type, x, y, angle) {
 function drawNode(n) {
   n.height = calcNodeHeight(n)
 
-  ctx.strokeStyle = n === state.hovered ? '#1e88e5' : '#222'
-  ctx.lineWidth = n === state.hovered ? 2 : 1
+  ctx.strokeStyle = '#222'
   ctx.fillStyle = '#fff'
   ctx.strokeRect(n.x, n.y, n.width, n.height)
 
@@ -184,8 +191,6 @@ function drawNode(n) {
       n.y + 40 + i * 14
     )
   })
-
-  ctx.lineWidth = 1
 }
 
 function drawLink(l) {
@@ -201,20 +206,21 @@ function drawLink(l) {
   ctx.lineTo(p2.x, p2.y)
   ctx.stroke()
 
-  const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x)
-  drawCardinality(ctx, l.fromCardinality, p1.x, p1.y, angle)
-  drawCardinality(ctx, l.toCardinality, p2.x, p2.y, angle + Math.PI)
+  const ang = Math.atan2(p2.y - p1.y, p2.x - p1.x)
+  drawCardinality(l.fromCardinality, p1.x, p1.y, ang)
+  drawCardinality(l.toCardinality, p2.x, p2.y, ang + Math.PI)
 }
 
 /* ================= EVENTS ================= */
 canvas.onmousedown = e => {
-  const p = screenToWorld(e.offsetX, e.offsetY)
+  const x = e.offsetX
+  const y = e.offsetY
+  const hit = hitNode(x, y)
 
   if (state.tool === 'node') {
     state.nodes.push({
       id: crypto.randomUUID(),
-      x: p.x,
-      y: p.y,
+      x, y,
       width: 180,
       title: 'Entity',
       fields: [{ name: 'id', type: 'int', meta: 'PK' }]
@@ -222,107 +228,104 @@ canvas.onmousedown = e => {
     return
   }
 
-  const hit = hitNode(p.x, p.y)
+  if (state.tool === 'link') {
+    if (hit) {
+      if (!state.linkDraft) {
+        state.linkDraft = { from: hit, toPoint: { x, y } }
+      } else if (state.linkDraft.from !== hit) {
+        state.links.push({
+          id: crypto.randomUUID(),
+          from: state.linkDraft.from.id,
+          to: hit.id,
+          fromCardinality: 'one',
+          toCardinality: 'many'
+        })
+        state.linkDraft = null
+      }
+      return
+    }
+    state.linkDraft = null
+    return
+  }
 
   if (state.tool === 'select' && hit) {
     state.selected = hit
     state.dragging = true
-    state.dragOffset.x = p.x - hit.x
-    state.dragOffset.y = p.y - hit.y
-  }
-
-  if (state.tool === 'link' && hit) {
-    state.linkDraft = { from: hit, toNode: null, toPoint: null }
-    document.getElementById('cardinality-selector').style.display = 'block'
+    state.dragOffset = { x: x - hit.x, y: y - hit.y }
   }
 }
 
 canvas.onmousemove = e => {
-  const p = screenToWorld(e.offsetX, e.offsetY)
-  state.hovered = hitNode(p.x, p.y)
+  const x = e.offsetX
+  const y = e.offsetY
 
-  if (state.linkDraft) state.linkDraft.toPoint = p
+  if (state.linkDraft) {
+    state.linkDraft.toPoint = { x, y }
+  }
 
   if (state.dragging && state.selected) {
-    state.selected.x = p.x - state.dragOffset.x
-    state.selected.y = p.y - state.dragOffset.y
+    state.selected.x = x - state.dragOffset.x
+    state.selected.y = y - state.dragOffset.y
   }
 }
 
-canvas.onmouseup = e => {
-  const p = screenToWorld(e.offsetX, e.offsetY)
-  if (state.linkDraft) {
-    const target = hitNode(p.x, p.y)
-    if (target && target !== state.linkDraft.from)
-      state.linkDraft.toNode = target
-  }
+canvas.onmouseup = () => {
   state.dragging = false
   state.selected = null
 }
 
 canvas.ondblclick = e => {
-  const p = screenToWorld(e.offsetX, e.offsetY)
-  const node = hitNode(p.x, p.y)
+  const x = e.offsetX
+  const y = e.offsetY
+  const node = hitNode(x, y)
   if (!node) return
 
-  if (p.y <= node.y + 24) {
-    const title = prompt('Entity name:', node.title)
-    if (title) node.title = title.trim()
+  if (y <= node.y + 24) {
+    const t = prompt('Entity name:', node.title)
+    if (t) node.title = t.trim()
     return
   }
 
-  const index = Math.floor((p.y - (node.y + 40)) / 14)
-  if (index >= 0 && index < node.fields.length) {
-    editField(node, index)
+  const idx = Math.floor((y - (node.y + 40)) / 14)
+  if (idx >= 0 && idx < node.fields.length) {
+    const f = node.fields[idx]
+    const v = prompt(
+      'Field (name:type [meta]):',
+      `${f.name}:${f.type}${f.meta ? ' [' + f.meta + ']' : ''}`
+    )
+    if (!v) return
+    const m = v.match(/^(\w+):(\w+)(?:\s*\[(.+)\])?$/)
+    if (!m) return
+    f.name = m[1]
+    f.type = m[2]
+    f.meta = m[3] || null
   }
-}
-
-function editField(node, index) {
-  const f = node.fields[index]
-  const current =
-    `${f.name}:${f.type}${f.meta ? ' [' + f.meta + ']' : ''}`
-
-  const value = prompt('Field (name:type [meta]):', current)
-  if (!value) return
-
-  const match = value.match(/^(\w+)\s*:\s*(\w+)(?:\s*\[(.+)\])?$/)
-  if (!match) {
-    alert('Format: name:type [PK|FK]')
-    return
-  }
-
-  f.name = match[1]
-  f.type = match[2]
-  f.meta = match[3] || null
 }
 
 canvas.oncontextmenu = e => {
   e.preventDefault()
   state.linkDraft = null
-  document.getElementById('cardinality-selector').style.display = 'none'
 }
 
 addEventListener('keydown', e => {
-  if (e.key === 'Escape') {
-    state.linkDraft = null
-    document.getElementById('cardinality-selector').style.display = 'none'
-  }
+  if (e.key === 'Escape') state.linkDraft = null
 })
 
 /* ================= LOOP ================= */
 function loop() {
-  ctx.setTransform(state.scale, 0, 0, state.scale, 0, 0)
-  ctx.clearRect(0, 0, canvas.width / state.scale, canvas.height / state.scale)
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
+  drawBackgroundDots()
 
   state.links.forEach(drawLink)
   state.nodes.forEach(drawNode)
 
   if (state.linkDraft && state.linkDraft.toPoint) {
-    const c = center(state.linkDraft.from)
-    ctx.setLineDash([5, 5])
+    const p1 = intersection(state.linkDraft.from, state.linkDraft.toPoint)
+    const p2 = state.linkDraft.toPoint
+    ctx.setLineDash([6, 6])
     ctx.beginPath()
-    ctx.moveTo(c.x, c.y)
-    ctx.lineTo(state.linkDraft.toPoint.x, state.linkDraft.toPoint.y)
+    ctx.moveTo(p1.x, p1.y)
+    ctx.lineTo(p2.x, p2.y)
     ctx.stroke()
     ctx.setLineDash([])
   }
@@ -330,26 +333,6 @@ function loop() {
   requestAnimationFrame(loop)
 }
 loop()
-
-/* ================= CONFIRM LINK ================= */
-function confirmLink() {
-  document.getElementById('cardinality-selector').style.display = 'none'
-
-  if (!state.linkDraft || !state.linkDraft.toNode) {
-    state.linkDraft = null
-    return
-  }
-
-  state.links.push({
-    id: crypto.randomUUID(),
-    from: state.linkDraft.from.id,
-    to: state.linkDraft.toNode.id,
-    fromCardinality: document.getElementById('from-cardinality').value,
-    toCardinality: document.getElementById('to-cardinality').value
-  })
-
-  state.linkDraft = null
-}
 </script>
 
 </body>
