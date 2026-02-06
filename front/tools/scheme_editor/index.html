@@ -102,7 +102,7 @@
     .toolbtn:hover::after,
     .toolbtn:hover::before { opacity: 1; }
 
-    /* Маленький статус (для проверки) */
+    /* Маленький статус */
     #toolstatus{
       position: fixed;
       top: 14px;
@@ -628,56 +628,46 @@ function hitLink(x, y) {
   return null
 }
 
-/* ================= SMOOTH LINKS ================= */
-const LINK_CORNER_RADIUS = 10
+/* ================= BEZIER SMOOTH LINKS ================= */
+const BEZIER_HANDLE = 18
 
-/* Функция: возвращает нормализованное направление (dx,dy) для ортогональных сегментов */
-function orthoDir(a, b) {
-  const dx = b.x - a.x
-  const dy = b.y - a.y
-  if (Math.abs(dx) >= Math.abs(dy)) return { x: Math.sign(dx) || 0, y: 0 }
-  return { x: 0, y: Math.sign(dy) || 0 }
+/* Функция: нормализует вектор */
+function norm(vx, vy) {
+  const len = Math.hypot(vx, vy) || 1
+  return { x: vx / len, y: vy / len, len }
 }
 
-/* Функция: рисует ломаную с округлением углов (через arcTo) */
-function strokeRoundedPolyline(points, radius) {
+/* Функция: рисует путь как последовательность cubic Bezier по ломаной */
+function strokeBezierFromPolyline(points, handlePx) {
   if (!points || points.length < 2) return
-  if (points.length === 2 || radius <= 0) {
-    ctx.beginPath()
-    ctx.moveTo(points[0].x, points[0].y)
-    ctx.lineTo(points[1].x, points[1].y)
-    ctx.stroke()
-    return
-  }
 
   ctx.beginPath()
   ctx.moveTo(points[0].x, points[0].y)
 
-  for (let i = 1; i < points.length - 1; i++) {
-    const prev = points[i - 1]
-    const cur  = points[i]
-    const next = points[i + 1]
+  // Строим кубические сегменты между каждым P[i] -> P[i+1],
+  // используя направление (касательные) по соседним точкам.
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i - 1] || points[i]
+    const p1 = points[i]
+    const p2 = points[i + 1]
+    const p3 = points[i + 2] || points[i + 1]
 
-    const inDir  = orthoDir(cur, prev)  // направление "внутрь" назад
-    const outDir = orthoDir(cur, next)  // направление вперёд
+    // касательная в p1 и p2 (по типу Catmull-Rom, но с ограничением длины)
+    const t1 = norm(p2.x - p0.x, p2.y - p0.y)
+    const t2 = norm(p3.x - p1.x, p3.y - p1.y)
 
-    // длины входящего/выходящего сегмента
-    const inLen  = Math.hypot(cur.x - prev.x, cur.y - prev.y)
-    const outLen = Math.hypot(next.x - cur.x, next.y - cur.y)
+    // длина текущего сегмента
+    const segLen = Math.hypot(p2.x - p1.x, p2.y - p1.y)
 
-    // радиус ограничиваем половинами сегментов, чтобы не было “перелётов”
-    const r = Math.min(radius, inLen / 2, outLen / 2)
+    // ручки ограничиваем: не больше половины сегмента
+    const h = Math.min(handlePx, segLen / 2)
 
-    // точки до/после угла
-    const pBefore = { x: cur.x + inDir.x * r,  y: cur.y + inDir.y * r }
-    const pAfter  = { x: cur.x + outDir.x * r, y: cur.y + outDir.y * r }
+    const c1 = { x: p1.x + t1.x * h, y: p1.y + t1.y * h }
+    const c2 = { x: p2.x - t2.x * h, y: p2.y - t2.y * h }
 
-    ctx.lineTo(pBefore.x, pBefore.y)
-    ctx.arcTo(cur.x, cur.y, pAfter.x, pAfter.y, r)
+    ctx.bezierCurveTo(c1.x, c1.y, c2.x, c2.y, p2.x, p2.y)
   }
 
-  const last = points[points.length - 1]
-  ctx.lineTo(last.x, last.y)
   ctx.stroke()
 }
 
@@ -736,7 +726,7 @@ function drawNode(n) {
   }
 }
 
-/* Функция: рисует связь с округлением углов + кардинальности */
+/* Функция: рисует связь кривыми Безье + кардинальности */
 function drawLink(l) {
   const path = state.linkPaths.get(l.id)
   if (!path || !path.points || path.points.length < 2) return
@@ -745,12 +735,13 @@ function drawLink(l) {
   ctx.strokeStyle = selected ? '#1e88e5' : '#222'
   ctx.lineWidth = selected ? 2 : 1
   ctx.setLineDash([])
-
-  // Сглаживание: округляем углы ломаной
-  ctx.lineJoin = 'round'
   ctx.lineCap = 'round'
-  strokeRoundedPolyline(path.points, LINK_CORNER_RADIUS)
+  ctx.lineJoin = 'round'
 
+  // Безье-рисование по ломаной
+  strokeBezierFromPolyline(path.points, BEZIER_HANDLE)
+
+  // кардинальности — на реальных концах
   const pts = path.points
   const startAngle = Math.atan2(path.startDir.y, path.startDir.x)
   const endAngle   = Math.atan2(path.endDir.y, path.endDir.x)
