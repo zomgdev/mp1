@@ -83,7 +83,7 @@ email:varchar"></textarea>
 
   <div class="hint">
     Формат строк: <b>name:type [meta]</b><br/>
-    Примеры meta: PK, FK, UQ, NN, IDX и т.п. (любой текст в скобках).<br/>
+    Примеры meta: PK, FK, UQ, NN, IDX и т.п.<br/>
     Пустые строки игнорируются.
   </div>
 
@@ -113,18 +113,18 @@ const state = {
   nodes: [],
   links: [],
   tool: 'select',
-  selected: null,
+  selected: null,            // выбранная entity для drag
+  selectedLinkId: null,      // выбранная связь (для подсветки)
   dragging: false,
   dragOffset: { x: 0, y: 0 },
-  linkDraft: null,      // { from: Node, toPoint: {x,y} }
-  editingNode: null,    // Node, которую сейчас редактируем в панели
-  refsCache: new Map()  // Map<nodeId, string[]> список заголовков referenced (включая вложенные)
+  linkDraft: null,           // { from: Node, toPoint: {x,y} }
+  editingNode: null,         // Node, которую сейчас редактируем в панели
+  refsCache: new Map()       // Map<nodeId, string[]>
 }
 
 /* Функция: переключает инструмент (select/node/link) */
 function setTool(tool) {
   state.tool = tool
-  // При уходе с link — отменяем черновик связи
   if (tool !== 'link') state.linkDraft = null
 }
 
@@ -186,8 +186,6 @@ function calcNodeHeight(n) {
   const refsHeaderLines = refs.length > 0 ? 1 : 0
   const refsLines = refs.length
 
-  // поля начинают рисоваться с y = node.y + 40 (т.е. header + 16)
-  // поэтому формула ниже держит совместимость с текущим layout
   const totalLines = fieldsLines + refsHeaderLines + refsLines
   return header + padding + totalLines * line
 }
@@ -203,6 +201,45 @@ function intersection(rect, target) {
   const ady = Math.abs(dy) || 0.00001
   const scale = Math.min(rect.width / 2 / adx, rect.height / 2 / ady)
   return { x: cx + dx * scale, y: cy + dy * scale }
+}
+
+/* Функция: расстояние от точки до отрезка (для hit-test связи) */
+function distPointToSegment(px, py, x1, y1, x2, y2) {
+  const vx = x2 - x1
+  const vy = y2 - y1
+  const wx = px - x1
+  const wy = py - y1
+
+  const c1 = wx * vx + wy * vy
+  if (c1 <= 0) return Math.hypot(px - x1, py - y1)
+
+  const c2 = vx * vx + vy * vy
+  if (c2 <= c1) return Math.hypot(px - x2, py - y2)
+
+  const t = c1 / c2
+  const projx = x1 + t * vx
+  const projy = y1 + t * vy
+  return Math.hypot(px - projx, py - projy)
+}
+
+/* Функция: hit-test по связи. Возвращает link (или null), если клик рядом с линией */
+function hitLink(x, y) {
+  const TH = 7 // порог "насколько близко" к линии считаем попадание
+
+  for (let i = state.links.length - 1; i >= 0; i--) {
+    const l = state.links[i]
+    const a = state.nodes.find(n => n.id === l.from)
+    const b = state.nodes.find(n => n.id === l.to)
+    if (!a || !b) continue
+
+    const p1 = intersection(a, center(b))
+    const p2 = intersection(b, center(a))
+
+    const d = distPointToSegment(x, y, p1.x, p1.y, p2.x, p2.y)
+    if (d <= TH) return l
+  }
+
+  return null
 }
 
 /* ================= CARDINALITY ================= */
@@ -259,11 +296,8 @@ function buildAdjacency() {
 
 /* Функция: вычисляет достижимые узлы из startId (транзитивно), исключая сам startId */
 function collectReachable(adj, startId) {
-  const visited = new Set()
+  const visited = new Set([startId])
   const stack = [startId]
-
-  // Мы не хотим включать startId в результат
-  visited.add(startId)
 
   while (stack.length) {
     const v = stack.pop()
@@ -280,10 +314,9 @@ function collectReachable(adj, startId) {
   return visited
 }
 
-/* Функция: обновляет кэш refsCache для всех entity (список заголовков referenced, включая вложенные) */
+/* Функция: обновляет кэш refsCache для всех entity */
 function updateRefsCache() {
   const adj = buildAdjacency()
-
   const titleById = new Map()
   for (const n of state.nodes) titleById.set(n.id, n.title)
 
@@ -291,16 +324,13 @@ function updateRefsCache() {
   for (const n of state.nodes) {
     const reachable = collectReachable(adj, n.id)
     const titles = []
-
     for (const id of reachable) {
       const t = titleById.get(id)
       if (t) titles.push(t)
     }
-
     titles.sort((a, b) => a.localeCompare(b, 'ru'))
     cache.set(n.id, titles)
   }
-
   state.refsCache = cache
 }
 
@@ -309,25 +339,21 @@ function updateRefsCache() {
 function drawNode(n) {
   n.height = calcNodeHeight(n)
 
-  // Непрозрачный фон entity (чтобы сетка не просвечивала)
   ctx.fillStyle = '#ffffff'
   ctx.fillRect(n.x, n.y, n.width, n.height)
 
-  // Рамка
   ctx.strokeStyle = '#222'
+  ctx.lineWidth = 1
   ctx.strokeRect(n.x, n.y, n.width, n.height)
 
-  // Header
   ctx.fillStyle = '#eeeeee'
   ctx.fillRect(n.x, n.y, n.width, 24)
   ctx.strokeRect(n.x, n.y, n.width, 24)
 
-  // Title
   ctx.fillStyle = '#000'
   ctx.font = 'bold 12px sans-serif'
   ctx.fillText(n.title, n.x + 6, n.y + 16)
 
-  // Fields
   ctx.font = '12px monospace'
   const lineH = 14
   let y = n.y + 40
@@ -341,10 +367,8 @@ function drawNode(n) {
     y += lineH
   })
 
-  // References (список заголовков сущностей, на которые ссылаемся, включая вложенные)
   const refs = state.refsCache.get(n.id) || []
   if (refs.length > 0) {
-    // небольшая визуальная граница
     ctx.strokeStyle = 'rgba(0,0,0,0.15)'
     ctx.beginPath()
     ctx.moveTo(n.x + 4, y + 4)
@@ -366,7 +390,7 @@ function drawNode(n) {
   }
 }
 
-/* Функция: рисует связь между entity с кардинальностями на концах */
+/* Функция: рисует связь между entity с подсветкой выбранной связи */
 function drawLink(l) {
   const a = state.nodes.find(n => n.id === l.from)
   const b = state.nodes.find(n => n.id === l.to)
@@ -375,7 +399,11 @@ function drawLink(l) {
   const p1 = intersection(a, center(b))
   const p2 = intersection(b, center(a))
 
-  ctx.strokeStyle = '#222'
+  const selected = (state.selectedLinkId === l.id)
+
+  ctx.strokeStyle = selected ? '#1e88e5' : '#222'
+  ctx.lineWidth = selected ? 2 : 1
+
   ctx.beginPath()
   ctx.moveTo(p1.x, p1.y)
   ctx.lineTo(p2.x, p2.y)
@@ -384,6 +412,8 @@ function drawLink(l) {
   const ang = Math.atan2(p2.y - p1.y, p2.x - p1.x)
   drawCardinality(l.fromCardinality, p1.x, p1.y, ang)
   drawCardinality(l.toCardinality, p2.x, p2.y, ang + Math.PI)
+
+  ctx.lineWidth = 1
 }
 
 /* ================= ENTITY EDITOR (FREE FORM) ================= */
@@ -392,7 +422,7 @@ const editorTitleInput = document.getElementById('entity-title-input')
 const editorFieldsText = document.getElementById('entity-fields-text')
 const editorErrorEl = document.getElementById('entity-editor-error')
 
-/* Функция: открывает панель редактирования entity (title + поля свободной формой) */
+/* Функция: открывает панель редактирования entity */
 function openEntityEditor(node) {
   state.editingNode = node
   editorTitleInput.value = node.title
@@ -411,7 +441,7 @@ function closeEntityEditor() {
   editorErrorEl.textContent = ''
 }
 
-/* Функция: применяет изменения из панели (title + поля) к entity */
+/* Функция: применяет изменения из панели */
 function applyEntityEditor() {
   const node = state.editingNode
   if (!node) return
@@ -430,12 +460,12 @@ function applyEntityEditor() {
   closeEntityEditor()
 }
 
-/* Функция: превращает массив полей в текст (по одному полю на строку) */
+/* Функция: превращает массив полей в текст */
 function stringifyFields(fields) {
   return fields.map(f => `${f.name}:${f.type}${f.meta ? ' [' + f.meta + ']' : ''}`).join('\n')
 }
 
-/* Функция: парсит поля из свободного текста (строки формата name:type [meta]) */
+/* Функция: парсит поля из свободного текста */
 function parseFieldsText(text) {
   const lines = text.split(/\r?\n/)
   const fields = []
@@ -450,7 +480,6 @@ function parseFieldsText(text) {
       errors.push(`Строка ${i + 1}: неверный формат -> "${lines[i]}"`)
       continue
     }
-
     fields.push({ name: m[1], type: m[2], meta: m[3] ? m[3].trim() : null })
   }
 
@@ -482,10 +511,22 @@ function editSingleField(node, index) {
 }
 
 /* ================= EVENTS ================= */
-/* Функция: обработчик нажатия мыши (создание entity, перетаскивание, создание связей) */
+/* Функция: обработчик нажатия мыши */
 canvas.onmousedown = e => {
   const x = e.offsetX
   const y = e.offsetY
+
+  // В режиме Select: сначала проверяем попадание по связи (выделение)
+  if (state.tool === 'select') {
+    const link = hitLink(x, y)
+    if (link) {
+      state.selectedLinkId = link.id
+      state.dragging = false
+      state.selected = null
+      return
+    }
+  }
+
   const hit = hitNode(x, y)
 
   // Инструмент: создание сущности
@@ -493,7 +534,7 @@ canvas.onmousedown = e => {
     state.nodes.push({
       id: crypto.randomUUID(),
       x, y,
-      width: 220,              // чуть шире, чтобы refs помещались лучше
+      width: 220,
       title: 'Entity',
       fields: [{ name: 'id', type: 'int', meta: 'PK' }]
     })
@@ -522,14 +563,21 @@ canvas.onmousedown = e => {
   }
 
   // Инструмент: выбор и перетаскивание
-  if (state.tool === 'select' && hit) {
-    state.selected = hit
-    state.dragging = true
-    state.dragOffset = { x: x - hit.x, y: y - hit.y }
+  if (state.tool === 'select') {
+    if (hit) {
+      state.selected = hit
+      state.dragging = true
+      state.dragOffset = { x: x - hit.x, y: y - hit.y }
+      state.selectedLinkId = null
+      return
+    }
+    // клик в пустоту — снять выделение связи/узла
+    state.selectedLinkId = null
+    state.selected = null
   }
 }
 
-/* Функция: обработчик движения мыши (перетаскивание + обновление пунктира связи) */
+/* Функция: обработчик движения мыши */
 canvas.onmousemove = e => {
   const x = e.offsetX
   const y = e.offsetY
@@ -542,58 +590,64 @@ canvas.onmousemove = e => {
   }
 }
 
-/* Функция: обработчик отпускания кнопки мыши (останавливает drag) */
+/* Функция: обработчик отпускания кнопки мыши */
 canvas.onmouseup = () => {
   state.dragging = false
   state.selected = null
 }
 
-/* Функция: обработчик двойного клика (редактирование title/поля/свободная форма) */
+/* Функция: обработчик двойного клика (удаление связи / редактирование entity) */
 canvas.ondblclick = e => {
   const x = e.offsetX
   const y = e.offsetY
+
+  // 1) Двойной клик по связи — удалить
+  const link = hitLink(x, y)
+  if (link) {
+    state.links = state.links.filter(l => l.id !== link.id)
+    if (state.selectedLinkId === link.id) state.selectedLinkId = null
+    return
+  }
+
+  // 2) Двойной клик по entity — редактирование
   const node = hitNode(x, y)
   if (!node) return
 
-  // двойной клик по header: редактируем заголовок
   if (y <= node.y + 24) {
     const t = prompt('Заголовок сущности:', node.title)
     if (t !== null && t.trim() !== '') node.title = t.trim()
     return
   }
 
-  // если клик по строке поля — редактируем одно поле
   const idx = Math.floor((y - (node.y + 40)) / 14)
   if (idx >= 0 && idx < node.fields.length) {
     editSingleField(node, idx)
     return
   }
 
-  // иначе — открываем свободную форму
   openEntityEditor(node)
 }
 
-/* Функция: обработчик правой кнопки мыши (отменяет черновик связи, не показывает меню) */
+/* Функция: обработчик правой кнопки мыши */
 canvas.oncontextmenu = e => {
   e.preventDefault()
   state.linkDraft = null
 }
 
-/* Функция: обработчик клавиатуры (Esc отменяет черновик связи/закрывает редактор) */
+/* Функция: обработчик клавиатуры */
 addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     state.linkDraft = null
     if (editorEl.style.display === 'block') closeEntityEditor()
+    state.selectedLinkId = null
   }
 })
 
 /* ================= LOOP ================= */
 /* Функция: основной цикл отрисовки canvas */
 function loop() {
-  // 1) обновляем кэш references (включая вложенные) перед вычислением высот и отрисовкой
   updateRefsCache()
 
-  // 2) рисуем
   ctx.clearRect(0, 0, canvas.width, canvas.height)
   drawBackgroundDots()
 
@@ -604,6 +658,7 @@ function loop() {
   if (state.linkDraft && state.linkDraft.toPoint) {
     const p1 = intersection(state.linkDraft.from, state.linkDraft.toPoint)
     const p2 = state.linkDraft.toPoint
+    ctx.strokeStyle = '#222'
     ctx.setLineDash([6, 6])
     ctx.beginPath()
     ctx.moveTo(p1.x, p1.y)
