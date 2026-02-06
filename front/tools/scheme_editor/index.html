@@ -4,11 +4,7 @@
   <meta charset="UTF-8" />
   <title>ER Diagram – Crow's Foot</title>
   <style>
-    body {
-      margin: 0;
-      overflow: hidden;
-      font-family: sans-serif;
-    }
+    body { margin: 0; overflow: hidden; font-family: sans-serif; }
     #toolbar {
       position: fixed;
       top: 10px;
@@ -21,13 +17,8 @@
       z-index: 10;
       user-select: none;
     }
-    canvas {
-      background: #f4f4f4;
-      display: block;
-    }
-    button {
-      cursor: pointer;
-    }
+    canvas { background: #f4f4f4; display: block; }
+    button { cursor: pointer; }
   </style>
 </head>
 <body>
@@ -63,7 +54,7 @@ const state = {
   selected: null,
   dragging: false,
   dragOffset: { x: 0, y: 0 },
-  linkDraft: null // { from, toPoint }
+  linkDraft: null
 }
 
 function setTool(tool) {
@@ -171,11 +162,15 @@ function drawCardinality(type, x, y, angle) {
 function drawNode(n) {
   n.height = calcNodeHeight(n)
 
+  // ---- НЕПРОЗРАЧНЫЙ ФОН ENTITY ----
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(n.x, n.y, n.width, n.height)
+
   ctx.strokeStyle = '#222'
-  ctx.fillStyle = '#fff'
   ctx.strokeRect(n.x, n.y, n.width, n.height)
 
-  ctx.fillStyle = '#eee'
+  // header
+  ctx.fillStyle = '#eeeeee'
   ctx.fillRect(n.x, n.y, n.width, 24)
   ctx.strokeRect(n.x, n.y, n.width, 24)
 
