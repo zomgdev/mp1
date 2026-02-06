@@ -9,7 +9,6 @@
       --panel-border:#d7d7d7;
       --panel-shadow: 0 10px 24px rgba(0,0,0,.10);
       --icon:#2b2b2b;
-      --icon-muted:#6a6a6a;
       --accent:#1e88e5;
       --hover:#f2f5f8;
     }
@@ -52,9 +51,7 @@
       border-color: #e8e8e8;
     }
 
-    .toolbtn:active {
-      transform: translateY(1px);
-    }
+    .toolbtn:active { transform: translateY(1px); }
 
     .toolbtn.active {
       background: rgba(30,136,229,0.12);
@@ -71,9 +68,7 @@
       stroke-linejoin: round;
     }
 
-    .toolbtn.active svg {
-      stroke: var(--accent);
-    }
+    .toolbtn.active svg { stroke: var(--accent); }
 
     /* Tooltip */
     .toolbtn[data-tip]::after {
@@ -90,7 +85,7 @@
       white-space: nowrap;
       opacity: 0;
       pointer-events: none;
-      transition: opacity .12s ease, transform .12s ease;
+      transition: opacity .12s ease;
     }
     .toolbtn[data-tip]::before {
       content: "";
@@ -104,17 +99,29 @@
       pointer-events: none;
       transition: opacity .12s ease;
     }
-
     .toolbtn:hover::after,
-    .toolbtn:hover::before {
-      opacity: 1;
+    .toolbtn:hover::before { opacity: 1; }
+
+    /* Маленький статус (для проверки) */
+    #toolstatus{
+      position: fixed;
+      top: 14px;
+      left: 84px;
+      background: rgba(255,255,255,0.92);
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 12px;
+      z-index: 11;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+      user-select: none;
     }
 
-    /* Панель редактора сущности (title + fields свободной формой) */
+    /* Панель редактора сущности */
     #entity-editor {
       position: fixed;
       top: 70px;
-      left: 84px; /* чтобы не перекрывать вертикальную панель */
+      left: 84px;
       width: 360px;
       background: #fff;
       border: 1px solid #ccc;
@@ -126,12 +133,7 @@
     }
     #entity-editor h3 { margin: 0 0 8px 0; font-size: 14px; }
     #entity-editor label { display: block; font-size: 12px; margin: 8px 0 4px; }
-    #entity-title-input {
-      width: 100%;
-      box-sizing: border-box;
-      padding: 6px;
-      font-size: 12px;
-    }
+    #entity-title-input { width: 100%; box-sizing: border-box; padding: 6px; font-size: 12px; }
     #entity-fields-text {
       width: 100%;
       height: 160px;
@@ -149,18 +151,14 @@
 </head>
 <body>
 
-<!-- ================= VERTICAL TOOL PANEL ================= -->
 <div id="toolpanel" aria-label="Tools">
-  <!-- Select -->
-  <button class="toolbtn active" id="tool-select" data-tool="select" data-tip="Выбор / Перемещение (Select)">
+  <button type="button" class="toolbtn active" data-tool="select" data-tip="Выбор / Перемещение (Select)">
     <svg viewBox="0 0 24 24" aria-hidden="true">
-      <!-- cursor arrow -->
       <path d="M4 3l7.5 17 2.2-6 6 0.6L4 3z"></path>
     </svg>
   </button>
 
-  <!-- Entity -->
-  <button class="toolbtn" id="tool-node" data-tool="node" data-tip="Добавить сущность (Entity)">
+  <button type="button" class="toolbtn" data-tool="node" data-tip="Добавить сущность (Entity)">
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <rect x="5" y="6" width="14" height="12" rx="2"></rect>
       <path d="M5 10h14"></path>
@@ -168,8 +166,7 @@
     </svg>
   </button>
 
-  <!-- Link -->
-  <button class="toolbtn" id="tool-link" data-tool="link" data-tip="Связь (Link)">
+  <button type="button" class="toolbtn" data-tool="link" data-tip="Связь (Link)">
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path d="M7 12a4 4 0 0 1 4-4h2"></path>
       <path d="M17 12a4 4 0 0 1-4 4h-2"></path>
@@ -180,7 +177,8 @@
   </button>
 </div>
 
-<!-- Редактор сущности: свободная форма для полей -->
+<div id="toolstatus">Tool: <b id="toolstatusValue">select</b></div>
+
 <div id="entity-editor">
   <h3>Entity editor</h3>
 
@@ -193,8 +191,8 @@ user_id:int [FK]
 email:varchar"></textarea>
 
   <div class="row">
-    <button onclick="applyEntityEditor()">Применить</button>
-    <button onclick="closeEntityEditor()">Отмена</button>
+    <button type="button" onclick="applyEntityEditor()">Применить</button>
+    <button type="button" onclick="closeEntityEditor()">Отмена</button>
   </div>
 
   <div class="hint">
@@ -214,30 +212,43 @@ const canvas = document.getElementById('canvas')
 const ctx = canvas.getContext('2d')
 let bgPattern = null
 
-/* Функция: подгоняет размеры canvas под окно браузера */
-function resize() {
-  canvas.width = innerWidth
-  canvas.height = innerHeight
-  bgPattern = null
-}
-addEventListener('resize', resize)
-resize()
-
 /* ================= STATE ================= */
 const state = {
   nodes: [],
   links: [],
   tool: 'select',
-  selected: null,            // выбранная entity для drag
-  selectedLinkId: null,      // выбранная связь (для подсветки)
+  selected: null,
+  selectedLinkId: null,
   dragging: false,
   dragOffset: { x: 0, y: 0 },
-  linkDraft: null,           // { from: Node, toPoint: {x,y} }
-  editingNode: null,         // Node, которую сейчас редактируем в панели
-  refsCache: new Map()       // Map<nodeId, string[]>
+  linkDraft: null,
+  editingNode: null,
+  refsCache: new Map(),
+
+  linkPaths: new Map(),
+  layoutVersion: 0,
+  lastRoutedVersion: -1
 }
 
-/* Функция: применяет активный класс для кнопок инструмента */
+/* Функция: увеличивает версию лэйаута (когда меняется геометрия/размеры) */
+function bumpLayoutVersion() {
+  state.layoutVersion++
+}
+
+/* Функция: подгоняет размеры canvas под окно браузера */
+function resize() {
+  canvas.width = innerWidth
+  canvas.height = innerHeight
+  bgPattern = null
+  bumpLayoutVersion()
+}
+addEventListener('resize', resize)
+resize()
+
+/* ================= TOOL PANEL ================= */
+const toolStatusEl = document.getElementById('toolstatusValue')
+
+/* Функция: применяет active-класс для кнопок инструмента */
 function setActiveToolButton(tool) {
   document.querySelectorAll('.toolbtn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tool === tool)
@@ -249,15 +260,21 @@ function setTool(tool) {
   state.tool = tool
   if (tool !== 'link') state.linkDraft = null
   setActiveToolButton(tool)
+  toolStatusEl.textContent = tool
 }
 
-/* Функция: подключает обработчики к вертикальной панели инструментов */
+/* Функция: инициализирует клики по кнопкам панели */
 function initToolPanel() {
   document.querySelectorAll('.toolbtn').forEach(btn => {
-    btn.addEventListener('click', () => setTool(btn.dataset.tool))
+    btn.addEventListener('click', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      setTool(btn.dataset.tool)
+    })
   })
 }
 initToolPanel()
+setTool('select')
 
 /* ================= BACKGROUND DOT GRID ================= */
 const CM_PX = 37.8
@@ -334,7 +351,7 @@ function intersection(rect, target) {
   return { x: cx + dx * scale, y: cy + dy * scale }
 }
 
-/* Функция: расстояние от точки до отрезка (для hit-test связи) */
+/* Функция: расстояние от точки до отрезка */
 function distPointToSegment(px, py, x1, y1, x2, y2) {
   const vx = x2 - x1
   const vy = y2 - y1
@@ -353,27 +370,7 @@ function distPointToSegment(px, py, x1, y1, x2, y2) {
   return Math.hypot(px - projx, py - projy)
 }
 
-/* Функция: hit-test по связи. Возвращает link или null */
-function hitLink(x, y) {
-  const TH = 7
-
-  for (let i = state.links.length - 1; i >= 0; i--) {
-    const l = state.links[i]
-    const a = state.nodes.find(n => n.id === l.from)
-    const b = state.nodes.find(n => n.id === l.to)
-    if (!a || !b) continue
-
-    const p1 = intersection(a, center(b))
-    const p2 = intersection(b, center(a))
-
-    const d = distPointToSegment(x, y, p1.x, p1.y, p2.x, p2.y)
-    if (d <= TH) return l
-  }
-  return null
-}
-
 /* ================= CARDINALITY ================= */
-/* Функция: рисует "воронью лапку" (many) */
 function drawCrowFoot(x, y, angle) {
   const s = 10, sp = Math.PI / 6
   for (let i of [-1, 0, 1]) {
@@ -386,8 +383,6 @@ function drawCrowFoot(x, y, angle) {
     ctx.stroke()
   }
 }
-
-/* Функция: рисует "единицу" (one) */
 function drawOne(x, y, angle) {
   const s = 8, a = angle + Math.PI / 2
   ctx.beginPath()
@@ -395,26 +390,18 @@ function drawOne(x, y, angle) {
   ctx.lineTo(x - Math.cos(a) * s, y - Math.sin(a) * s)
   ctx.stroke()
 }
-
-/* Функция: рисует "ноль" (optional) */
 function drawZero(x, y) {
   ctx.beginPath()
   ctx.arc(x, y, 4, 0, Math.PI * 2)
   ctx.stroke()
 }
-
-/* Функция: рисует кардинальность по типу */
 function drawCardinality(type, x, y, angle) {
   if (type === 'one') drawOne(x, y, angle)
   if (type === 'many') drawCrowFoot(x, y, angle)
-  if (type === 'zero-one') {
-    drawZero(x, y)
-    drawOne(x, y, angle)
-  }
+  if (type === 'zero-one') { drawZero(x, y); drawOne(x, y, angle) }
 }
 
 /* ================= REFERENCES (TRANSITIVE) ================= */
-/* Функция: строит карту смежности графа ссылок (from -> [to...]) */
 function buildAdjacency() {
   const adj = new Map()
   for (const l of state.links) {
@@ -423,12 +410,9 @@ function buildAdjacency() {
   }
   return adj
 }
-
-/* Функция: вычисляет достижимые узлы из startId (транзитивно) */
 function collectReachable(adj, startId) {
   const visited = new Set([startId])
   const stack = [startId]
-
   while (stack.length) {
     const v = stack.pop()
     const next = adj.get(v)
@@ -439,12 +423,9 @@ function collectReachable(adj, startId) {
       stack.push(u)
     }
   }
-
   visited.delete(startId)
   return visited
 }
-
-/* Функция: обновляет кэш refsCache для всех entity */
 function updateRefsCache() {
   const adj = buildAdjacency()
   const titleById = new Map()
@@ -464,10 +445,249 @@ function updateRefsCache() {
   state.refsCache = cache
 }
 
+/* ================= ROUTING (A* on GRID) ================= */
+const ROUTE_CELL = 18
+const ROUTE_MARGIN = 14
+const ROUTE_MAX_ITERS = 50000
+
+function toCell(p) { return { cx: Math.floor(p.x / ROUTE_CELL), cy: Math.floor(p.y / ROUTE_CELL) } }
+function cellCenter(cx, cy) { return { x: cx * ROUTE_CELL + ROUTE_CELL / 2, y: cy * ROUTE_CELL + ROUTE_CELL / 2 } }
+function cellKey(cx, cy) { return `${cx},${cy}` }
+
+function buildBlockedCells(startPt, endPt) {
+  const blocked = new Set()
+  const wCells = Math.ceil(canvas.width / ROUTE_CELL)
+  const hCells = Math.ceil(canvas.height / ROUTE_CELL)
+
+  for (const n of state.nodes) {
+    const rect = {
+      x: n.x - ROUTE_MARGIN,
+      y: n.y - ROUTE_MARGIN,
+      width: n.width + ROUTE_MARGIN * 2,
+      height: n.height + ROUTE_MARGIN * 2
+    }
+
+    const minCx = Math.max(0, Math.floor(rect.x / ROUTE_CELL))
+    const maxCx = Math.min(wCells - 1, Math.floor((rect.x + rect.width) / ROUTE_CELL))
+    const minCy = Math.max(0, Math.floor(rect.y / ROUTE_CELL))
+    const maxCy = Math.min(hCells - 1, Math.floor((rect.y + rect.height) / ROUTE_CELL))
+
+    for (let cy = minCy; cy <= maxCy; cy++) {
+      for (let cx = minCx; cx <= maxCx; cx++) {
+        const c = cellCenter(cx, cy)
+        if (c.x >= rect.x && c.x <= rect.x + rect.width && c.y >= rect.y && c.y <= rect.y + rect.height) {
+          blocked.add(cellKey(cx, cy))
+        }
+      }
+    }
+  }
+
+  const s = toCell(startPt)
+  const t = toCell(endPt)
+  blocked.delete(cellKey(s.cx, s.cy))
+  blocked.delete(cellKey(t.cx, t.cy))
+  return blocked
+}
+
+function astar(startPt, endPt) {
+  const wCells = Math.ceil(canvas.width / ROUTE_CELL)
+  const hCells = Math.ceil(canvas.height / ROUTE_CELL)
+
+  const start = toCell(startPt)
+  const goal = toCell(endPt)
+  const blocked = buildBlockedCells(startPt, endPt)
+
+  const open = new Map()
+  const cameFrom = new Map()
+  const gScore = new Map()
+
+  const h = (cx, cy) => Math.abs(cx - goal.cx) + Math.abs(cy - goal.cy)
+
+  const startK = cellKey(start.cx, start.cy)
+  gScore.set(startK, 0)
+  open.set(startK, { cx: start.cx, cy: start.cy, f: h(start.cx, start.cy) })
+
+  let iters = 0
+  while (open.size && iters++ < ROUTE_MAX_ITERS) {
+    let currentK = null
+    let current = null
+    for (const [k, v] of open.entries()) {
+      if (!current || v.f < current.f) { current = v; currentK = k }
+    }
+    if (!currentK) break
+    open.delete(currentK)
+
+    if (current.cx === goal.cx && current.cy === goal.cy) {
+      const path = []
+      let k = currentK
+      path.push({ cx: current.cx, cy: current.cy })
+      while (cameFrom.has(k)) {
+        k = cameFrom.get(k)
+        const [cx, cy] = k.split(',').map(Number)
+        path.push({ cx, cy })
+      }
+      path.reverse()
+      return path
+    }
+
+    const neighbors = [
+      { cx: current.cx + 1, cy: current.cy },
+      { cx: current.cx - 1, cy: current.cy },
+      { cx: current.cx, cy: current.cy + 1 },
+      { cx: current.cx, cy: current.cy - 1 }
+    ]
+
+    for (const nb of neighbors) {
+      if (nb.cx < 0 || nb.cy < 0 || nb.cx >= wCells || nb.cy >= hCells) continue
+      const nbK = cellKey(nb.cx, nb.cy)
+      if (blocked.has(nbK)) continue
+
+      const tentativeG = (gScore.get(currentK) ?? Infinity) + 1
+      const oldG = gScore.get(nbK)
+      if (oldG === undefined || tentativeG < oldG) {
+        cameFrom.set(nbK, currentK)
+        gScore.set(nbK, tentativeG)
+        open.set(nbK, { cx: nb.cx, cy: nb.cy, f: tentativeG + h(nb.cx, nb.cy) })
+      }
+    }
+  }
+  return null
+}
+
+function simplifyPolyline(points) {
+  if (points.length <= 2) return points.slice()
+  const out = [points[0]]
+  for (let i = 1; i < points.length - 1; i++) {
+    const a = out[out.length - 1]
+    const b = points[i]
+    const c = points[i + 1]
+    const abx = Math.sign(b.x - a.x), aby = Math.sign(b.y - a.y)
+    const bcx = Math.sign(c.x - b.x), bcy = Math.sign(c.y - b.y)
+    if (abx === bcx && aby === bcy) continue
+    out.push(b)
+  }
+  out.push(points[points.length - 1])
+  return out
+}
+
+function routeLink(link) {
+  const a = state.nodes.find(n => n.id === link.from)
+  const b = state.nodes.find(n => n.id === link.to)
+  if (!a || !b) return null
+
+  const startAnchor = intersection(a, center(b))
+  const endAnchor   = intersection(b, center(a))
+
+  const cellPath = astar(startAnchor, endAnchor)
+  if (!cellPath || cellPath.length < 2) {
+    const pts = [startAnchor, endAnchor]
+    const startDir = { x: endAnchor.x - startAnchor.x, y: endAnchor.y - startAnchor.y }
+    const endDir = { x: startAnchor.x - endAnchor.x, y: startAnchor.y - endAnchor.y }
+    return { points: pts, startDir, endDir }
+  }
+
+  const pts = [startAnchor]
+  for (let i = 1; i < cellPath.length - 1; i++) pts.push(cellCenter(cellPath[i].cx, cellPath[i].cy))
+  pts.push(endAnchor)
+
+  const simple = simplifyPolyline(pts)
+  const p0 = simple[0], p1 = simple[1] || simple[0]
+  const pn = simple[simple.length - 1], pn1 = simple[simple.length - 2] || pn
+
+  const startDir = { x: p1.x - p0.x, y: p1.y - p0.y }
+  const endDir   = { x: pn1.x - pn.x, y: pn1.y - pn.y }
+  return { points: simple, startDir, endDir }
+}
+
+function ensureRouted() {
+  if (state.lastRoutedVersion === state.layoutVersion) return
+  state.linkPaths.clear()
+  for (const l of state.links) {
+    const routed = routeLink(l)
+    if (routed) state.linkPaths.set(l.id, routed)
+  }
+  state.lastRoutedVersion = state.layoutVersion
+}
+
+/* ================= HIT TEST LINK (POLYLINE) ================= */
+function hitLink(x, y) {
+  const TH = 7
+  ensureRouted()
+
+  for (let i = state.links.length - 1; i >= 0; i--) {
+    const l = state.links[i]
+    const path = state.linkPaths.get(l.id)
+    if (!path || !path.points || path.points.length < 2) continue
+
+    const pts = path.points
+    for (let k = 0; k < pts.length - 1; k++) {
+      const a = pts[k], b = pts[k + 1]
+      if (distPointToSegment(x, y, a.x, a.y, b.x, b.y) <= TH) return l
+    }
+  }
+  return null
+}
+
+/* ================= SMOOTH LINKS ================= */
+const LINK_CORNER_RADIUS = 10
+
+/* Функция: возвращает нормализованное направление (dx,dy) для ортогональных сегментов */
+function orthoDir(a, b) {
+  const dx = b.x - a.x
+  const dy = b.y - a.y
+  if (Math.abs(dx) >= Math.abs(dy)) return { x: Math.sign(dx) || 0, y: 0 }
+  return { x: 0, y: Math.sign(dy) || 0 }
+}
+
+/* Функция: рисует ломаную с округлением углов (через arcTo) */
+function strokeRoundedPolyline(points, radius) {
+  if (!points || points.length < 2) return
+  if (points.length === 2 || radius <= 0) {
+    ctx.beginPath()
+    ctx.moveTo(points[0].x, points[0].y)
+    ctx.lineTo(points[1].x, points[1].y)
+    ctx.stroke()
+    return
+  }
+
+  ctx.beginPath()
+  ctx.moveTo(points[0].x, points[0].y)
+
+  for (let i = 1; i < points.length - 1; i++) {
+    const prev = points[i - 1]
+    const cur  = points[i]
+    const next = points[i + 1]
+
+    const inDir  = orthoDir(cur, prev)  // направление "внутрь" назад
+    const outDir = orthoDir(cur, next)  // направление вперёд
+
+    // длины входящего/выходящего сегмента
+    const inLen  = Math.hypot(cur.x - prev.x, cur.y - prev.y)
+    const outLen = Math.hypot(next.x - cur.x, next.y - cur.y)
+
+    // радиус ограничиваем половинами сегментов, чтобы не было “перелётов”
+    const r = Math.min(radius, inLen / 2, outLen / 2)
+
+    // точки до/после угла
+    const pBefore = { x: cur.x + inDir.x * r,  y: cur.y + inDir.y * r }
+    const pAfter  = { x: cur.x + outDir.x * r, y: cur.y + outDir.y * r }
+
+    ctx.lineTo(pBefore.x, pBefore.y)
+    ctx.arcTo(cur.x, cur.y, pAfter.x, pAfter.y, r)
+  }
+
+  const last = points[points.length - 1]
+  ctx.lineTo(last.x, last.y)
+  ctx.stroke()
+}
+
 /* ================= DRAW ================= */
-/* Функция: рисует entity */
 function drawNode(n) {
-  n.height = calcNodeHeight(n)
+  const newH = calcNodeHeight(n)
+  if ((n.height ?? 0) !== newH) {
+    n.height = newH
+    bumpLayoutVersion()
+  }
 
   ctx.fillStyle = '#ffffff'
   ctx.fillRect(n.x, n.y, n.width, n.height)
@@ -489,11 +709,7 @@ function drawNode(n) {
   let y = n.y + 40
 
   n.fields.forEach((f) => {
-    ctx.fillText(
-      `${f.name}: ${f.type}${f.meta ? ' [' + f.meta + ']' : ''}`,
-      n.x + 6,
-      y
-    )
+    ctx.fillText(`${f.name}: ${f.type}${f.meta ? ' [' + f.meta + ']' : ''}`, n.x + 6, y)
     y += lineH
   })
 
@@ -520,39 +736,37 @@ function drawNode(n) {
   }
 }
 
-/* Функция: рисует связь (с подсветкой выбранной) */
+/* Функция: рисует связь с округлением углов + кардинальности */
 function drawLink(l) {
-  const a = state.nodes.find(n => n.id === l.from)
-  const b = state.nodes.find(n => n.id === l.to)
-  if (!a || !b) return
-
-  const p1 = intersection(a, center(b))
-  const p2 = intersection(b, center(a))
+  const path = state.linkPaths.get(l.id)
+  if (!path || !path.points || path.points.length < 2) return
 
   const selected = (state.selectedLinkId === l.id)
-
   ctx.strokeStyle = selected ? '#1e88e5' : '#222'
   ctx.lineWidth = selected ? 2 : 1
+  ctx.setLineDash([])
 
-  ctx.beginPath()
-  ctx.moveTo(p1.x, p1.y)
-  ctx.lineTo(p2.x, p2.y)
-  ctx.stroke()
+  // Сглаживание: округляем углы ломаной
+  ctx.lineJoin = 'round'
+  ctx.lineCap = 'round'
+  strokeRoundedPolyline(path.points, LINK_CORNER_RADIUS)
 
-  const ang = Math.atan2(p2.y - p1.y, p2.x - p1.x)
-  drawCardinality(l.fromCardinality, p1.x, p1.y, ang)
-  drawCardinality(l.toCardinality, p2.x, p2.y, ang + Math.PI)
+  const pts = path.points
+  const startAngle = Math.atan2(path.startDir.y, path.startDir.x)
+  const endAngle   = Math.atan2(path.endDir.y, path.endDir.x)
+
+  drawCardinality(l.fromCardinality, pts[0].x, pts[0].y, startAngle)
+  drawCardinality(l.toCardinality, pts[pts.length - 1].x, pts[pts.length - 1].y, endAngle)
 
   ctx.lineWidth = 1
 }
 
-/* ================= ENTITY EDITOR (FREE FORM) ================= */
+/* ================= ENTITY EDITOR ================= */
 const editorEl = document.getElementById('entity-editor')
 const editorTitleInput = document.getElementById('entity-title-input')
 const editorFieldsText = document.getElementById('entity-fields-text')
 const editorErrorEl = document.getElementById('entity-editor-error')
 
-/* Функция: открывает панель редактирования entity */
 function openEntityEditor(node) {
   state.editingNode = node
   editorTitleInput.value = node.title
@@ -562,16 +776,12 @@ function openEntityEditor(node) {
   editorEl.style.display = 'block'
   editorTitleInput.focus()
 }
-
-/* Функция: закрывает панель редактирования entity */
 function closeEntityEditor() {
   state.editingNode = null
   editorEl.style.display = 'none'
   editorErrorEl.style.display = 'none'
   editorErrorEl.textContent = ''
 }
-
-/* Функция: применяет изменения из панели */
 function applyEntityEditor() {
   const node = state.editingNode
   if (!node) return
@@ -588,14 +798,11 @@ function applyEntityEditor() {
 
   node.fields = parsed.fields
   closeEntityEditor()
+  bumpLayoutVersion()
 }
-
-/* Функция: превращает массив полей в текст */
 function stringifyFields(fields) {
   return fields.map(f => `${f.name}:${f.type}${f.meta ? ' [' + f.meta + ']' : ''}`).join('\n')
 }
-
-/* Функция: парсит поля из свободного текста */
 function parseFieldsText(text) {
   const lines = text.split(/\r?\n/)
   const fields = []
@@ -604,12 +811,8 @@ function parseFieldsText(text) {
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i].trim()
     if (!raw) continue
-
     const m = raw.match(/^(\w+)\s*:\s*([A-Za-z0-9_]+)(?:\s*\[(.+)\])?$/)
-    if (!m) {
-      errors.push(`Строка ${i + 1}: неверный формат -> "${lines[i]}"`)
-      continue
-    }
+    if (!m) { errors.push(`Строка ${i + 1}: неверный формат -> "${lines[i]}"`); continue }
     fields.push({ name: m[1], type: m[2], meta: m[3] ? m[3].trim() : null })
   }
 
@@ -617,36 +820,24 @@ function parseFieldsText(text) {
   if (fields.length === 0) fields.push({ name: 'id', type: 'int', meta: 'PK' })
   return { ok: true, fields }
 }
-
-/* ================= SINGLE FIELD EDIT ================= */
-/* Функция: редактирует одно поле entity через prompt */
 function editSingleField(node, index) {
   const f = node.fields[index]
   const current = `${f.name}:${f.type}${f.meta ? ' [' + f.meta + ']' : ''}`
   const value = prompt('Поле (name:type [meta]):', current)
   if (value === null) return
-
   const v = value.trim()
   if (!v) return
-
   const m = v.match(/^(\w+)\s*:\s*([A-Za-z0-9_]+)(?:\s*\[(.+)\])?$/)
-  if (!m) {
-    alert('Неверный формат. Пример: user_id:int [FK]')
-    return
-  }
-
-  f.name = m[1]
-  f.type = m[2]
-  f.meta = m[3] ? m[3].trim() : null
+  if (!m) { alert('Неверный формат. Пример: user_id:int [FK]'); return }
+  f.name = m[1]; f.type = m[2]; f.meta = m[3] ? m[3].trim() : null
+  bumpLayoutVersion()
 }
 
 /* ================= EVENTS ================= */
-/* Функция: обработчик нажатия мыши */
 canvas.onmousedown = e => {
   const x = e.offsetX
   const y = e.offsetY
 
-  // В режиме Select: сначала проверяем попадание по связи (выделение)
   if (state.tool === 'select') {
     const link = hitLink(x, y)
     if (link) {
@@ -659,7 +850,6 @@ canvas.onmousedown = e => {
 
   const hit = hitNode(x, y)
 
-  // Инструмент: создание сущности
   if (state.tool === 'node') {
     state.nodes.push({
       id: crypto.randomUUID(),
@@ -668,10 +858,10 @@ canvas.onmousedown = e => {
       title: 'Entity',
       fields: [{ name: 'id', type: 'int', meta: 'PK' }]
     })
+    bumpLayoutVersion()
     return
   }
 
-  // Инструмент: создание связей (2 клика)
   if (state.tool === 'link') {
     if (hit) {
       if (!state.linkDraft) {
@@ -685,6 +875,7 @@ canvas.onmousedown = e => {
           toCardinality: 'many'
         })
         state.linkDraft = null
+        bumpLayoutVersion()
       }
       return
     }
@@ -692,7 +883,6 @@ canvas.onmousedown = e => {
     return
   }
 
-  // Инструмент: выбор и перетаскивание
   if (state.tool === 'select') {
     if (hit) {
       state.selected = hit
@@ -701,13 +891,11 @@ canvas.onmousedown = e => {
       state.selectedLinkId = null
       return
     }
-    // клик в пустоту — снять выделение связи/узла
     state.selectedLinkId = null
     state.selected = null
   }
 }
 
-/* Функция: обработчик движения мыши */
 canvas.onmousemove = e => {
   const x = e.offsetX
   const y = e.offsetY
@@ -717,35 +905,36 @@ canvas.onmousemove = e => {
   if (state.dragging && state.selected) {
     state.selected.x = x - state.dragOffset.x
     state.selected.y = y - state.dragOffset.y
+    bumpLayoutVersion()
   }
 }
 
-/* Функция: обработчик отпускания кнопки мыши */
 canvas.onmouseup = () => {
   state.dragging = false
   state.selected = null
 }
 
-/* Функция: обработчик двойного клика (удаление связи / редактирование entity) */
 canvas.ondblclick = e => {
   const x = e.offsetX
   const y = e.offsetY
 
-  // 1) Двойной клик по связи — удалить
   const link = hitLink(x, y)
   if (link) {
     state.links = state.links.filter(l => l.id !== link.id)
     if (state.selectedLinkId === link.id) state.selectedLinkId = null
+    bumpLayoutVersion()
     return
   }
 
-  // 2) Двойной клик по entity — редактирование
   const node = hitNode(x, y)
   if (!node) return
 
   if (y <= node.y + 24) {
     const t = prompt('Заголовок сущности:', node.title)
-    if (t !== null && t.trim() !== '') node.title = t.trim()
+    if (t !== null && t.trim() !== '') {
+      node.title = t.trim()
+      bumpLayoutVersion()
+    }
     return
   }
 
@@ -758,30 +947,26 @@ canvas.ondblclick = e => {
   openEntityEditor(node)
 }
 
-/* Функция: обработчик правой кнопки мыши */
 canvas.oncontextmenu = e => {
   e.preventDefault()
   state.linkDraft = null
 }
 
-/* Функция: обработчик клавиатуры */
 addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     state.linkDraft = null
     if (editorEl.style.display === 'block') closeEntityEditor()
     state.selectedLinkId = null
   }
-
-  // Быстрый хоткей: 1/2/3 переключают инструменты как в редакторах
   if (e.key === '1') setTool('select')
   if (e.key === '2') setTool('node')
   if (e.key === '3') setTool('link')
 })
 
 /* ================= LOOP ================= */
-/* Функция: основной цикл отрисовки canvas */
 function loop() {
   updateRefsCache()
+  ensureRouted()
 
   ctx.clearRect(0, 0, canvas.width, canvas.height)
   drawBackgroundDots()
@@ -789,11 +974,13 @@ function loop() {
   state.links.forEach(drawLink)
   state.nodes.forEach(drawNode)
 
-  // временная пунктирная линия при создании связи
+  // Пунктир при создании связи
   if (state.linkDraft && state.linkDraft.toPoint) {
-    const p1 = intersection(state.linkDraft.from, state.linkDraft.toPoint)
+    const a = state.linkDraft.from
+    const p1 = intersection(a, state.linkDraft.toPoint)
     const p2 = state.linkDraft.toPoint
     ctx.strokeStyle = '#222'
+    ctx.lineWidth = 1
     ctx.setLineDash([6, 6])
     ctx.beginPath()
     ctx.moveTo(p1.x, p1.y)
