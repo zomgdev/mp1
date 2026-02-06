@@ -19,6 +19,67 @@
     }
     canvas { background: #f4f4f4; display: block; }
     button { cursor: pointer; }
+
+    /* Панель редактора сущности (title + fields свободной формой) */
+    #entity-editor {
+      position: fixed;
+      top: 70px;
+      left: 10px;
+      width: 340px;
+      background: #fff;
+      border: 1px solid #ccc;
+      padding: 10px;
+      z-index: 30;
+      display: none;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+    }
+    #entity-editor h3 {
+      margin: 0 0 8px 0;
+      font-size: 14px;
+    }
+    #entity-editor label {
+      display: block;
+      font-size: 12px;
+      margin: 8px 0 4px;
+    }
+    #entity-title-input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 6px;
+      font-size: 12px;
+    }
+    #entity-fields-text {
+      width: 100%;
+      height: 160px;
+      box-sizing: border-box;
+      padding: 6px;
+      font-size: 12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      resize: vertical;
+    }
+    #entity-editor .row {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    #entity-editor .row button {
+      flex: 1;
+      padding: 6px;
+      font-size: 12px;
+    }
+    #entity-editor .hint {
+      margin-top: 8px;
+      font-size: 11px;
+      color: #555;
+      line-height: 1.3;
+    }
+    #entity-editor .error {
+      margin-top: 8px;
+      font-size: 11px;
+      color: #b00020;
+      display: none;
+      white-space: pre-wrap;
+    }
   </style>
 </head>
 <body>
@@ -27,6 +88,32 @@
   <button onclick="setTool('select')">Select</button>
   <button onclick="setTool('node')">Entity</button>
   <button onclick="setTool('link')">Link</button>
+</div>
+
+<!-- Редактор сущности: свободная форма для полей -->
+<div id="entity-editor">
+  <h3>Entity editor</h3>
+
+  <label for="entity-title-input">Заголовок</label>
+  <input id="entity-title-input" type="text" />
+
+  <label for="entity-fields-text">Поля (по одному в строке)</label>
+  <textarea id="entity-fields-text" placeholder="id:int [PK]
+user_id:int [FK]
+email:varchar"></textarea>
+
+  <div class="row">
+    <button onclick="applyEntityEditor()">Применить</button>
+    <button onclick="closeEntityEditor()">Отмена</button>
+  </div>
+
+  <div class="hint">
+    Формат строк: <b>name:type [meta]</b><br/>
+    Примеры meta: PK, FK, UQ, NN, IDX и т.п. (любой текст в скобках).<br/>
+    Пустые строки игнорируются.
+  </div>
+
+  <div id="entity-editor-error" class="error"></div>
 </div>
 
 <canvas id="canvas"></canvas>
@@ -38,6 +125,7 @@ const ctx = canvas.getContext('2d')
 
 let bgPattern = null
 
+/* Функция: подгоняет размеры canvas под окно браузера */
 function resize() {
   canvas.width = innerWidth
   canvas.height = innerHeight
@@ -54,11 +142,14 @@ const state = {
   selected: null,
   dragging: false,
   dragOffset: { x: 0, y: 0 },
-  linkDraft: null
+  linkDraft: null,     // { from: Node, toPoint: {x,y} }
+  editingNode: null    // Node, которую сейчас редактируем в панели
 }
 
+/* Функция: переключает инструмент (select/node/link) */
 function setTool(tool) {
   state.tool = tool
+  // При уходе с link — отменяем черновик связи
   if (tool !== 'link') state.linkDraft = null
 }
 
@@ -67,6 +158,7 @@ const CM_PX = 37.8
 const GRID_SPACING = Math.round(CM_PX)
 const DOT_RADIUS = 1
 
+/* Функция: создаёт паттерн из точек для заливки фона */
 function makeDotPattern() {
   const p = document.createElement('canvas')
   p.width = GRID_SPACING
@@ -82,6 +174,7 @@ function makeDotPattern() {
   return ctx.createPattern(p, 'repeat')
 }
 
+/* Функция: рисует фон рабочей области точками */
 function drawBackgroundDots() {
   if (!bgPattern) bgPattern = makeDotPattern()
   ctx.save()
@@ -92,6 +185,7 @@ function drawBackgroundDots() {
 }
 
 /* ================= HELPERS ================= */
+/* Функция: находит entity под курсором (если попали в её прямоугольник) */
 function hitNode(x, y) {
   for (let i = state.nodes.length - 1; i >= 0; i--) {
     const n = state.nodes[i]
@@ -101,15 +195,18 @@ function hitNode(x, y) {
   return null
 }
 
+/* Функция: возвращает центр прямоугольника entity */
 function center(n) {
   return { x: n.x + n.width / 2, y: n.y + n.height / 2 }
 }
 
+/* Функция: вычисляет высоту entity по количеству полей */
 function calcNodeHeight(n) {
   return 24 + 16 + n.fields.length * 14
 }
 
 /* ================= GEOMETRY ================= */
+/* Функция: вычисляет точку пересечения линии с границей прямоугольника entity */
 function intersection(rect, target) {
   const cx = rect.x + rect.width / 2
   const cy = rect.y + rect.height / 2
@@ -122,6 +219,7 @@ function intersection(rect, target) {
 }
 
 /* ================= CARDINALITY ================= */
+/* Функция: рисует "воронью лапку" (many) */
 function drawCrowFoot(x, y, angle) {
   const s = 10, sp = Math.PI / 6
   for (let i of [-1, 0, 1]) {
@@ -135,6 +233,7 @@ function drawCrowFoot(x, y, angle) {
   }
 }
 
+/* Функция: рисует "единицу" (one) */
 function drawOne(x, y, angle) {
   const s = 8, a = angle + Math.PI / 2
   ctx.beginPath()
@@ -143,12 +242,14 @@ function drawOne(x, y, angle) {
   ctx.stroke()
 }
 
+/* Функция: рисует "ноль" (optional) */
 function drawZero(x, y) {
   ctx.beginPath()
   ctx.arc(x, y, 4, 0, Math.PI * 2)
   ctx.stroke()
 }
 
+/* Функция: рисует кардинальность по типу */
 function drawCardinality(type, x, y, angle) {
   if (type === 'one') drawOne(x, y, angle)
   if (type === 'many') drawCrowFoot(x, y, angle)
@@ -159,25 +260,29 @@ function drawCardinality(type, x, y, angle) {
 }
 
 /* ================= DRAW ================= */
+/* Функция: рисует entity (непрозрачный фон + заголовок + поля) */
 function drawNode(n) {
   n.height = calcNodeHeight(n)
 
-  // ---- НЕПРОЗРАЧНЫЙ ФОН ENTITY ----
+  // Непрозрачный фон entity (чтобы сетка не просвечивала)
   ctx.fillStyle = '#ffffff'
   ctx.fillRect(n.x, n.y, n.width, n.height)
 
+  // Рамка
   ctx.strokeStyle = '#222'
   ctx.strokeRect(n.x, n.y, n.width, n.height)
 
-  // header
+  // Header
   ctx.fillStyle = '#eeeeee'
   ctx.fillRect(n.x, n.y, n.width, 24)
   ctx.strokeRect(n.x, n.y, n.width, 24)
 
+  // Title
   ctx.fillStyle = '#000'
   ctx.font = 'bold 12px sans-serif'
   ctx.fillText(n.title, n.x + 6, n.y + 16)
 
+  // Fields
   ctx.font = '12px monospace'
   n.fields.forEach((f, i) => {
     ctx.fillText(
@@ -188,6 +293,7 @@ function drawNode(n) {
   })
 }
 
+/* Функция: рисует связь между entity с кардинальностями на концах */
 function drawLink(l) {
   const a = state.nodes.find(n => n.id === l.from)
   const b = state.nodes.find(n => n.id === l.to)
@@ -206,12 +312,123 @@ function drawLink(l) {
   drawCardinality(l.toCardinality, p2.x, p2.y, ang + Math.PI)
 }
 
+/* ================= ENTITY EDITOR (FREE FORM) ================= */
+const editorEl = document.getElementById('entity-editor')
+const editorTitleInput = document.getElementById('entity-title-input')
+const editorFieldsText = document.getElementById('entity-fields-text')
+const editorErrorEl = document.getElementById('entity-editor-error')
+
+/* Функция: открывает панель редактирования entity (title + поля свободной формой) */
+function openEntityEditor(node) {
+  state.editingNode = node
+  editorTitleInput.value = node.title
+  editorFieldsText.value = stringifyFields(node.fields)
+  editorErrorEl.style.display = 'none'
+  editorErrorEl.textContent = ''
+  editorEl.style.display = 'block'
+  editorTitleInput.focus()
+}
+
+/* Функция: закрывает панель редактирования entity */
+function closeEntityEditor() {
+  state.editingNode = null
+  editorEl.style.display = 'none'
+  editorErrorEl.style.display = 'none'
+  editorErrorEl.textContent = ''
+}
+
+/* Функция: применяет изменения из панели (title + поля) к entity */
+function applyEntityEditor() {
+  const node = state.editingNode
+  if (!node) return
+
+  const newTitle = editorTitleInput.value.trim()
+  if (newTitle) node.title = newTitle
+
+  const text = editorFieldsText.value
+  const parsed = parseFieldsText(text)
+
+  if (!parsed.ok) {
+    editorErrorEl.style.display = 'block'
+    editorErrorEl.textContent = parsed.error
+    return
+  }
+
+  node.fields = parsed.fields
+  closeEntityEditor()
+}
+
+/* Функция: превращает массив полей в текст (по одному полю на строку) */
+function stringifyFields(fields) {
+  return fields.map(f => `${f.name}:${f.type}${f.meta ? ' [' + f.meta + ']' : ''}`).join('\n')
+}
+
+/* Функция: парсит поля из свободного текста (строки формата name:type [meta]) */
+function parseFieldsText(text) {
+  const lines = text.split(/\r?\n/)
+  const fields = []
+  const errors = []
+
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i].trim()
+    if (!raw) continue
+
+    // name:type [meta]
+    const m = raw.match(/^(\w+)\s*:\s*([A-Za-z0-9_]+)(?:\s*\[(.+)\])?$/)
+    if (!m) {
+      errors.push(`Строка ${i + 1}: неверный формат -> "${lines[i]}"`)
+      continue
+    }
+
+    fields.push({
+      name: m[1],
+      type: m[2],
+      meta: m[3] ? m[3].trim() : null
+    })
+  }
+
+  if (errors.length) {
+    return { ok: false, error: errors.join('\n') }
+  }
+
+  // Если пользователь всё стёр — оставим хотя бы одно поле id:int [PK]
+  if (fields.length === 0) {
+    fields.push({ name: 'id', type: 'int', meta: 'PK' })
+  }
+
+  return { ok: true, fields }
+}
+
+/* ================= SINGLE FIELD EDIT (dblclick on row) ================= */
+/* Функция: редактирует одно поле entity через prompt */
+function editSingleField(node, index) {
+  const f = node.fields[index]
+  const current = `${f.name}:${f.type}${f.meta ? ' [' + f.meta + ']' : ''}`
+  const value = prompt('Поле (name:type [meta]):', current)
+  if (value === null) return
+
+  const v = value.trim()
+  if (!v) return
+
+  const m = v.match(/^(\w+)\s*:\s*([A-Za-z0-9_]+)(?:\s*\[(.+)\])?$/)
+  if (!m) {
+    alert('Неверный формат. Пример: user_id:int [FK]')
+    return
+  }
+
+  f.name = m[1]
+  f.type = m[2]
+  f.meta = m[3] ? m[3].trim() : null
+}
+
 /* ================= EVENTS ================= */
+/* Функция: обработчик нажатия мыши (создание entity, перетаскивание, создание связей) */
 canvas.onmousedown = e => {
   const x = e.offsetX
   const y = e.offsetY
   const hit = hitNode(x, y)
 
+  // Инструмент: создание сущности
   if (state.tool === 'node') {
     state.nodes.push({
       id: crypto.randomUUID(),
@@ -223,11 +440,14 @@ canvas.onmousedown = e => {
     return
   }
 
+  // Инструмент: создание связей (2 клика)
   if (state.tool === 'link') {
     if (hit) {
+      // первый клик: выбираем FROM
       if (!state.linkDraft) {
         state.linkDraft = { from: hit, toPoint: { x, y } }
       } else if (state.linkDraft.from !== hit) {
+        // второй клик: создаём связь сразу
         state.links.push({
           id: crypto.randomUUID(),
           from: state.linkDraft.from.id,
@@ -239,10 +459,12 @@ canvas.onmousedown = e => {
       }
       return
     }
+    // клик по пустоте отменяет черновик
     state.linkDraft = null
     return
   }
 
+  // Инструмент: выбор и перетаскивание
   if (state.tool === 'select' && hit) {
     state.selected = hit
     state.dragging = true
@@ -250,63 +472,68 @@ canvas.onmousedown = e => {
   }
 }
 
+/* Функция: обработчик движения мыши (перетаскивание + обновление пунктира связи) */
 canvas.onmousemove = e => {
   const x = e.offsetX
   const y = e.offsetY
 
-  if (state.linkDraft) {
-    state.linkDraft.toPoint = { x, y }
-  }
+  // обновляем точку конца пунктирной линии
+  if (state.linkDraft) state.linkDraft.toPoint = { x, y }
 
+  // перетаскивание выбранной сущности
   if (state.dragging && state.selected) {
     state.selected.x = x - state.dragOffset.x
     state.selected.y = y - state.dragOffset.y
   }
 }
 
+/* Функция: обработчик отпускания кнопки мыши (останавливает drag) */
 canvas.onmouseup = () => {
   state.dragging = false
   state.selected = null
 }
 
+/* Функция: обработчик двойного клика (редактирование title/поля/свободная форма) */
 canvas.ondblclick = e => {
   const x = e.offsetX
   const y = e.offsetY
   const node = hitNode(x, y)
   if (!node) return
 
+  // двойной клик по header: редактируем заголовок
   if (y <= node.y + 24) {
-    const t = prompt('Entity name:', node.title)
-    if (t) node.title = t.trim()
+    const t = prompt('Заголовок сущности:', node.title)
+    if (t !== null && t.trim() !== '') node.title = t.trim()
     return
   }
 
+  // если клик по строке поля — редактируем одно поле
   const idx = Math.floor((y - (node.y + 40)) / 14)
   if (idx >= 0 && idx < node.fields.length) {
-    const f = node.fields[idx]
-    const v = prompt(
-      'Field (name:type [meta]):',
-      `${f.name}:${f.type}${f.meta ? ' [' + f.meta + ']' : ''}`
-    )
-    if (!v) return
-    const m = v.match(/^(\w+):(\w+)(?:\s*\[(.+)\])?$/)
-    if (!m) return
-    f.name = m[1]
-    f.type = m[2]
-    f.meta = m[3] || null
+    editSingleField(node, idx)
+    return
   }
+
+  // иначе (клик в "пустом месте" тела) — открываем свободную форму
+  openEntityEditor(node)
 }
 
+/* Функция: обработчик правой кнопки мыши (отменяет черновик связи, не показывает меню) */
 canvas.oncontextmenu = e => {
   e.preventDefault()
   state.linkDraft = null
 }
 
+/* Функция: обработчик клавиатуры (Esc отменяет черновик связи/закрывает редактор) */
 addEventListener('keydown', e => {
-  if (e.key === 'Escape') state.linkDraft = null
+  if (e.key === 'Escape') {
+    state.linkDraft = null
+    if (editorEl.style.display === 'block') closeEntityEditor()
+  }
 })
 
 /* ================= LOOP ================= */
+/* Функция: основной цикл отрисовки canvas */
 function loop() {
   ctx.clearRect(0, 0, canvas.width, canvas.height)
   drawBackgroundDots()
@@ -314,6 +541,7 @@ function loop() {
   state.links.forEach(drawLink)
   state.nodes.forEach(drawNode)
 
+  // временная пунктирная линия при создании связи
   if (state.linkDraft && state.linkDraft.toPoint) {
     const p1 = intersection(state.linkDraft.from, state.linkDraft.toPoint)
     const p2 = state.linkDraft.toPoint
