@@ -1,0 +1,605 @@
+﻿?/* ================= SETUP ================= */
+const canvas = document.getElementById('canvas')
+const ctx = canvas.getContext('2d')
+let bgPattern = null
+
+/* ================= STATE ================= */
+const state = {
+  nodes: [],
+  links: [],
+  tool: 'select',
+  selected: null,            // выбранная entity для drag
+  selectedLinkId: null,      // выбранная связь (подсветка)
+  hoveredLinkId: null,       // связь под курсором
+  dragging: false,
+  dragOffset: { x: 0, y: 0 },
+  linkDraft: null,           // { from: Node, toPoint:{x,y} }
+  editingNode: null,         // редактируемая entity
+  refsCache: new Map()       // Map<nodeId, string[]>
+}
+
+/* Функция: подгоняет размеры canvas под окно браузера */
+function resize() {
+  canvas.width = innerWidth
+  canvas.height = innerHeight
+  bgPattern = null
+}
+addEventListener('resize', resize)
+resize()
+
+/* ================= TOOL PANEL ================= */
+const toolStatusEl = document.getElementById('toolstatusValue')
+
+/* Функция: подсветка активной кнопки */
+function setActiveToolButton(tool) {
+  document.querySelectorAll('.toolbtn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tool === tool)
+  })
+}
+
+/* Функция: переключение инструмента */
+function setTool(tool) {
+  state.tool = tool
+  if (tool !== 'link') state.linkDraft = null
+  setActiveToolButton(tool)
+  toolStatusEl.textContent = tool
+}
+
+/* Функция: подписка на клики по панели */
+function initToolPanel() {
+  document.querySelectorAll('.toolbtn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      setTool(btn.dataset.tool)
+    })
+  })
+}
+initToolPanel()
+setTool('select')
+
+/* ================= BACKGROUND DOT GRID ================= */
+const CM_PX = 37.8
+const GRID_SPACING = Math.round(CM_PX) // ~1см
+const DOT_RADIUS = 1
+
+/* Функция: создаёт паттерн точек */
+function makeDotPattern() {
+  const p = document.createElement('canvas')
+  p.width = GRID_SPACING
+  p.height = GRID_SPACING
+  const pctx = p.getContext('2d')
+  pctx.clearRect(0, 0, p.width, p.height)
+  pctx.beginPath()
+  pctx.arc(GRID_SPACING / 2, GRID_SPACING / 2, DOT_RADIUS, 0, Math.PI * 2)
+  pctx.fillStyle = 'rgba(0,0,0,0.18)'
+  pctx.fill()
+  return ctx.createPattern(p, 'repeat')
+}
+
+/* Функция: рисует фон точками */
+function drawBackgroundDots() {
+  if (!bgPattern) bgPattern = makeDotPattern()
+  ctx.save()
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.fillStyle = bgPattern
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.restore()
+}
+
+/* ================= HELPERS ================= */
+/* Функция: находит entity под курсором */
+function hitNode(x, y) {
+  for (let i = state.nodes.length - 1; i >= 0; i--) {
+    const n = state.nodes[i]
+    if (x >= n.x && x <= n.x + n.width &&
+        y >= n.y && y <= n.y + n.height) return n
+  }
+  return null
+}
+
+/* Функция: центр entity */
+function center(n) {
+  return { x: n.x + n.width / 2, y: n.y + n.height / 2 }
+}
+
+/* Функция: высота entity по строкам (поля + refs) */
+function calcNodeHeight(n) {
+  const line = 14
+  const header = 24
+  const padding = 16
+
+  const fieldsLines = n.fields.length
+  const refs = state.refsCache.get(n.id) || []
+  const refsHeaderLines = refs.length > 0 ? 1 : 0
+  const refsLines = refs.length
+
+  const totalLines = fieldsLines + refsHeaderLines + refsLines
+  return header + padding + totalLines * line
+}
+
+/* Функция: точка пересечения направления с прямоугольником entity */
+function intersection(rect, target) {
+  const cx = rect.x + rect.width / 2
+  const cy = rect.y + rect.height / 2
+  const dx = target.x - cx
+  const dy = target.y - cy
+  const adx = Math.abs(dx) || 0.00001
+  const ady = Math.abs(dy) || 0.00001
+  const scale = Math.min(rect.width / 2 / adx, rect.height / 2 / ady)
+  return { x: cx + dx * scale, y: cy + dy * scale }
+}
+
+/* Функция: расстояние от точки до отрезка */
+function distPointToSegment(px, py, x1, y1, x2, y2) {
+  const vx = x2 - x1
+  const vy = y2 - y1
+  const wx = px - x1
+  const wy = py - y1
+
+  const c1 = wx * vx + wy * vy
+  if (c1 <= 0) return Math.hypot(px - x1, py - y1)
+
+  const c2 = vx * vx + vy * vy
+  if (c2 <= c1) return Math.hypot(px - x2, py - y2)
+
+  const t = c1 / c2
+  const projx = x1 + t * vx
+  const projy = y1 + t * vy
+  return Math.hypot(px - projx, py - projy)
+}
+
+/* ================= CARDINALITY ================= */
+function drawCrowFoot(x, y, angle) {
+  const s = 10, sp = Math.PI / 6
+  for (let i of [-1, 0, 1]) {
+    ctx.beginPath()
+    ctx.moveTo(x, y)
+    ctx.lineTo(
+      x + Math.cos(angle + sp * i) * s,
+      y + Math.sin(angle + sp * i) * s
+    )
+    ctx.stroke()
+  }
+}
+function drawOne(x, y, angle) {
+  const s = 8, a = angle + Math.PI / 2
+  ctx.beginPath()
+  ctx.moveTo(x + Math.cos(a) * s, y + Math.sin(a) * s)
+  ctx.lineTo(x - Math.cos(a) * s, y - Math.sin(a) * s)
+  ctx.stroke()
+}
+function drawZero(x, y) {
+  ctx.beginPath()
+  ctx.arc(x, y, 4, 0, Math.PI * 2)
+  ctx.stroke()
+}
+function drawCardinality(type, x, y, angle) {
+  if (type === 'one') drawOne(x, y, angle)
+  if (type === 'many') drawCrowFoot(x, y, angle)
+  if (type === 'zero-one') { drawZero(x, y); drawOne(x, y, angle) }
+}
+
+/* ================= REFERENCES (TRANSITIVE) ================= */
+/* Функция: строит граф ссылок from->to */
+function buildAdjacency() {
+  const adj = new Map()
+  for (const l of state.links) {
+    if (!adj.has(l.from)) adj.set(l.from, new Set())
+    adj.get(l.from).add(l.to)
+  }
+  return adj
+}
+
+/* Функция: собирает все достижимые вершины (вложенные ссылки) */
+function collectReachable(adj, startId) {
+  const visited = new Set([startId])
+  const stack = [startId]
+  while (stack.length) {
+    const v = stack.pop()
+    const next = adj.get(v)
+    if (!next) continue
+    for (const u of next) {
+      if (visited.has(u)) continue
+      visited.add(u)
+      stack.push(u)
+    }
+  }
+  visited.delete(startId)
+  return visited
+}
+
+/* Функция: обновляет кэш refsCache: entity -> список заголовков достижимых entity */
+function updateRefsCache() {
+  const adj = buildAdjacency()
+  const titleById = new Map()
+  for (const n of state.nodes) titleById.set(n.id, n.title)
+
+  const cache = new Map()
+  for (const n of state.nodes) {
+    const reachable = collectReachable(adj, n.id)
+    const titles = []
+    for (const id of reachable) {
+      const t = titleById.get(id)
+      if (t) titles.push(t)
+    }
+    titles.sort((a, b) => a.localeCompare(b, 'ru'))
+    cache.set(n.id, titles)
+  }
+  state.refsCache = cache
+}
+
+/* ================= LINKS (STRAIGHT) ================= */
+/*
+  Прямая связь:
+  - считаем 2 точки на границах entity (p1 и p2)
+  - рисуем одну прямую
+*/
+function linkEndpoints(link) {
+  const a = state.nodes.find(n => n.id === link.from)
+  const b = state.nodes.find(n => n.id === link.to)
+  if (!a || !b) return null
+
+  const cA = center(a)
+  const cB = center(b)
+  const p1 = intersection(a, cB)
+  const p2 = intersection(b, cA)
+
+  const startDir = { x: p2.x - p1.x, y: p2.y - p1.y }
+  const endDir   = { x: p1.x - p2.x, y: p1.y - p2.y }
+
+  return { a, b, p1, p2, startDir, endDir }
+}
+
+/* Функция: hit-test по прямой связи */
+function hitLink(x, y) {
+  const TH = 7
+  for (let i = state.links.length - 1; i >= 0; i--) {
+    const l = state.links[i]
+    const ep = linkEndpoints(l)
+    if (!ep) continue
+    if (distPointToSegment(x, y, ep.p1.x, ep.p1.y, ep.p2.x, ep.p2.y) <= TH) return l
+  }
+  return null
+}
+
+/* ================= DRAW ================= */
+/* Функция: рисует entity */
+function drawNode(n) {
+  const newH = calcNodeHeight(n)
+  n.height = newH
+
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(n.x, n.y, n.width, n.height)
+
+  ctx.strokeStyle = '#222'
+  ctx.lineWidth = 1
+  ctx.strokeRect(n.x, n.y, n.width, n.height)
+
+  ctx.fillStyle = '#eeeeee'
+  ctx.fillRect(n.x, n.y, n.width, 24)
+  ctx.strokeRect(n.x, n.y, n.width, 24)
+
+  ctx.fillStyle = '#000'
+  ctx.font = 'bold 12px sans-serif'
+  ctx.fillText(n.title, n.x + 6, n.y + 16)
+
+  ctx.font = '12px monospace'
+  const lineH = 14
+  let y = n.y + 40
+
+  n.fields.forEach((f) => {
+    ctx.fillText(`${f.name}: ${f.type}${f.meta ? ' [' + f.meta + ']' : ''}`, n.x + 6, y)
+    y += lineH
+  })
+
+  const refs = state.refsCache.get(n.id) || []
+  if (refs.length > 0) {
+    ctx.strokeStyle = 'rgba(0,0,0,0.15)'
+    ctx.beginPath()
+    ctx.moveTo(n.x + 4, y + 4)
+    ctx.lineTo(n.x + n.width - 4, y + 4)
+    ctx.stroke()
+
+    y += lineH
+
+    ctx.fillStyle = '#000'
+    ctx.font = 'bold 12px sans-serif'
+    ctx.fillText('References:', n.x + 6, y)
+    y += lineH
+
+    ctx.font = '12px monospace'
+    refs.forEach((t) => {
+      ctx.fillText(`→ ${t}`, n.x + 6, y)
+      y += lineH
+    })
+  }
+}
+
+/* Функция: рисует прямую связь + кардинальности */
+function drawLink(l) {
+  const ep = linkEndpoints(l)
+  if (!ep) return
+
+  const selected = (state.selectedLinkId === l.id)
+  const hovered  = (state.hoveredLinkId === l.id)
+
+  if (selected) {
+    ctx.strokeStyle = '#1e88e5'
+    ctx.lineWidth = 2
+  } else if (hovered) {
+    ctx.strokeStyle = 'rgba(30,136,229,0.85)'
+    ctx.lineWidth = 2
+  } else {
+    ctx.strokeStyle = '#222'
+    ctx.lineWidth = 1
+  }
+
+  ctx.setLineDash([])
+  ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
+
+  ctx.beginPath()
+  ctx.moveTo(ep.p1.x, ep.p1.y)
+  ctx.lineTo(ep.p2.x, ep.p2.y)
+  ctx.stroke()
+
+  const startAngle = Math.atan2(ep.startDir.y, ep.startDir.x)
+  const endAngle   = Math.atan2(ep.endDir.y, ep.endDir.x)
+
+  drawCardinality(l.fromCardinality, ep.p1.x, ep.p1.y, startAngle)
+  drawCardinality(l.toCardinality, ep.p2.x, ep.p2.y, endAngle)
+
+  ctx.lineWidth = 1
+}
+
+/* ================= ENTITY EDITOR ================= */
+const editorEl = document.getElementById('entity-editor')
+const editorTitleInput = document.getElementById('entity-title-input')
+const editorFieldsText = document.getElementById('entity-fields-text')
+const editorErrorEl = document.getElementById('entity-editor-error')
+
+/* Функция: открыть редактор entity */
+function openEntityEditor(node) {
+  state.editingNode = node
+  editorTitleInput.value = node.title
+  editorFieldsText.value = stringifyFields(node.fields)
+  editorErrorEl.style.display = 'none'
+  editorErrorEl.textContent = ''
+  editorEl.style.display = 'block'
+  editorTitleInput.focus()
+}
+
+/* Функция: закрыть редактор entity */
+function closeEntityEditor() {
+  state.editingNode = null
+  editorEl.style.display = 'none'
+  editorErrorEl.style.display = 'none'
+  editorErrorEl.textContent = ''
+}
+
+/* Функция: применить изменения из редактора entity */
+function applyEntityEditor() {
+  const node = state.editingNode
+  if (!node) return
+
+  const newTitle = editorTitleInput.value.trim()
+  if (newTitle) node.title = newTitle
+
+  const parsed = parseFieldsText(editorFieldsText.value)
+  if (!parsed.ok) {
+    editorErrorEl.style.display = 'block'
+    editorErrorEl.textContent = parsed.error
+    return
+  }
+
+  node.fields = parsed.fields
+  closeEntityEditor()
+}
+
+/* Функция: сериализация полей в текст */
+function stringifyFields(fields) {
+  return fields.map(f => `${f.name}:${f.type}${f.meta ? ' [' + f.meta + ']' : ''}`).join('\n')
+}
+
+/* Функция: парсер текста полей */
+function parseFieldsText(text) {
+  const lines = text.split(/\r?\n/)
+  const fields = []
+  const errors = []
+
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i].trim()
+    if (!raw) continue
+    const m = raw.match(/^(\w+)\s*:\s*([A-Za-z0-9_]+)(?:\s*\[(.+)\])?$/)
+    if (!m) { errors.push(`Строка ${i + 1}: неверный формат -> "${lines[i]}"`); continue }
+    fields.push({ name: m[1], type: m[2], meta: m[3] ? m[3].trim() : null })
+  }
+
+  if (errors.length) return { ok: false, error: errors.join('\n') }
+  if (fields.length === 0) fields.push({ name: 'id', type: 'int', meta: 'PK' })
+  return { ok: true, fields }
+}
+
+/* Функция: редактирование одного поля по двойному клику */
+function editSingleField(node, index) {
+  const f = node.fields[index]
+  const current = `${f.name}:${f.type}${f.meta ? ' [' + f.meta + ']' : ''}`
+  const value = prompt('Поле (name:type [meta]):', current)
+  if (value === null) return
+  const v = value.trim()
+  if (!v) return
+  const m = v.match(/^(\w+)\s*:\s*([A-Za-z0-9_]+)(?:\s*\[(.+)\])?$/)
+  if (!m) { alert('Неверный формат. Пример: user_id:int [FK]'); return }
+  f.name = m[1]; f.type = m[2]; f.meta = m[3] ? m[3].trim() : null
+}
+
+/* ================= EVENTS ================= */
+canvas.onmousedown = e => {
+  const x = e.offsetX
+  const y = e.offsetY
+
+  // Select: сначала пробуем попадание по связи
+  if (state.tool === 'select') {
+    const link = hitLink(x, y)
+    if (link) {
+      state.selectedLinkId = link.id
+      state.dragging = false
+      state.selected = null
+      return
+    }
+  }
+
+  const hit = hitNode(x, y)
+
+  // Добавить entity
+  if (state.tool === 'node') {
+    state.nodes.push({
+      id: crypto.randomUUID(),
+      x, y,
+      width: 220,
+      title: 'Entity',
+      fields: [{ name: 'id', type: 'int', meta: 'PK' }]
+    })
+    return
+  }
+
+  // Создать связь (2 клика)
+  if (state.tool === 'link') {
+    if (hit) {
+      if (!state.linkDraft) {
+        state.linkDraft = { from: hit, toPoint: { x, y } }
+      } else if (state.linkDraft.from !== hit) {
+        state.links.push({
+          id: crypto.randomUUID(),
+          from: state.linkDraft.from.id,
+          to: hit.id,
+          fromCardinality: 'one',
+          toCardinality: 'many'
+        })
+        state.linkDraft = null
+      }
+      return
+    }
+    state.linkDraft = null
+    return
+  }
+
+  // Drag entity
+  if (state.tool === 'select') {
+    if (hit) {
+      state.selected = hit
+      state.dragging = true
+      state.dragOffset = { x: x - hit.x, y: y - hit.y }
+      state.selectedLinkId = null
+      return
+    }
+    state.selectedLinkId = null
+    state.selected = null
+  }
+}
+
+canvas.onmousemove = e => {
+  const x = e.offsetX
+  const y = e.offsetY
+
+  if (state.linkDraft) state.linkDraft.toPoint = { x, y }
+
+  // hover по связи
+  if (state.tool === 'select' && !state.dragging && !state.linkDraft) {
+    const link = hitLink(x, y)
+    state.hoveredLinkId = link ? link.id : null
+    canvas.style.cursor = link ? 'pointer' : 'default'
+  } else {
+    state.hoveredLinkId = null
+    canvas.style.cursor = 'default'
+  }
+
+  if (state.dragging && state.selected) {
+    state.selected.x = x - state.dragOffset.x
+    state.selected.y = y - state.dragOffset.y
+  }
+}
+
+canvas.onmouseup = () => {
+  state.dragging = false
+  state.selected = null
+}
+
+canvas.ondblclick = e => {
+  const x = e.offsetX
+  const y = e.offsetY
+
+  // dblclick по связи — удалить
+  const link = hitLink(x, y)
+  if (link) {
+    state.links = state.links.filter(l => l.id !== link.id)
+    if (state.selectedLinkId === link.id) state.selectedLinkId = null
+    if (state.hoveredLinkId === link.id) state.hoveredLinkId = null
+    return
+  }
+
+  // dblclick по entity — редактирование
+  const node = hitNode(x, y)
+  if (!node) return
+
+  if (y <= node.y + 24) {
+    const t = prompt('Заголовок сущности:', node.title)
+    if (t !== null && t.trim() !== '') node.title = t.trim()
+    return
+  }
+
+  const idx = Math.floor((y - (node.y + 40)) / 14)
+  if (idx >= 0 && idx < node.fields.length) {
+    editSingleField(node, idx)
+    return
+  }
+
+  openEntityEditor(node)
+}
+
+canvas.oncontextmenu = e => {
+  e.preventDefault()
+  state.linkDraft = null
+}
+
+addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    state.linkDraft = null
+    if (editorEl.style.display === 'block') closeEntityEditor()
+    state.selectedLinkId = null
+  }
+  if (e.key === '1') setTool('select')
+  if (e.key === '2') setTool('node')
+  if (e.key === '3') setTool('link')
+})
+
+/* ================= LOOP ================= */
+function loop() {
+  updateRefsCache()
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
+  drawBackgroundDots()
+
+  state.links.forEach(drawLink)
+  state.nodes.forEach(drawNode)
+
+  // Пунктир при создании связи (прямая)
+  if (state.linkDraft && state.linkDraft.toPoint) {
+    const a = state.linkDraft.from
+    const p1 = intersection(a, state.linkDraft.toPoint)
+    const p2 = state.linkDraft.toPoint
+
+    ctx.strokeStyle = '#222'
+    ctx.lineWidth = 1
+    ctx.setLineDash([6, 6])
+    ctx.beginPath()
+    ctx.moveTo(p1.x, p1.y)
+    ctx.lineTo(p2.x, p2.y)
+    ctx.stroke()
+    ctx.setLineDash([])
+  }
+
+  requestAnimationFrame(loop)
+}
+loop()
