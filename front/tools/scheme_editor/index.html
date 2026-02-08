@@ -102,7 +102,7 @@
     .toolbtn:hover::after,
     .toolbtn:hover::before { opacity: 1; }
 
-    /* Маленький статус */
+    /* Статус */
     #toolstatus{
       position: fixed;
       top: 14px;
@@ -217,22 +217,14 @@ const state = {
   nodes: [],
   links: [],
   tool: 'select',
-  selected: null,
-  selectedLinkId: null,
+  selected: null,            // выбранная entity для drag
+  selectedLinkId: null,      // выбранная связь (подсветка)
+  hoveredLinkId: null,       // связь под курсором
   dragging: false,
   dragOffset: { x: 0, y: 0 },
-  linkDraft: null,
-  editingNode: null,
-  refsCache: new Map(),
-
-  linkPaths: new Map(),
-  layoutVersion: 0,
-  lastRoutedVersion: -1
-}
-
-/* Функция: увеличивает версию лэйаута (когда меняется геометрия/размеры) */
-function bumpLayoutVersion() {
-  state.layoutVersion++
+  linkDraft: null,           // { from: Node, toPoint:{x,y} }
+  editingNode: null,         // редактируемая entity
+  refsCache: new Map()       // Map<nodeId, string[]>
 }
 
 /* Функция: подгоняет размеры canvas под окно браузера */
@@ -240,7 +232,6 @@ function resize() {
   canvas.width = innerWidth
   canvas.height = innerHeight
   bgPattern = null
-  bumpLayoutVersion()
 }
 addEventListener('resize', resize)
 resize()
@@ -248,14 +239,14 @@ resize()
 /* ================= TOOL PANEL ================= */
 const toolStatusEl = document.getElementById('toolstatusValue')
 
-/* Функция: применяет active-класс для кнопок инструмента */
+/* Функция: подсветка активной кнопки */
 function setActiveToolButton(tool) {
   document.querySelectorAll('.toolbtn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tool === tool)
   })
 }
 
-/* Функция: переключает инструмент (select/node/link) */
+/* Функция: переключение инструмента */
 function setTool(tool) {
   state.tool = tool
   if (tool !== 'link') state.linkDraft = null
@@ -263,7 +254,7 @@ function setTool(tool) {
   toolStatusEl.textContent = tool
 }
 
-/* Функция: инициализирует клики по кнопкам панели */
+/* Функция: подписка на клики по панели */
 function initToolPanel() {
   document.querySelectorAll('.toolbtn').forEach(btn => {
     btn.addEventListener('click', (e) => {
@@ -278,26 +269,24 @@ setTool('select')
 
 /* ================= BACKGROUND DOT GRID ================= */
 const CM_PX = 37.8
-const GRID_SPACING = Math.round(CM_PX)
+const GRID_SPACING = Math.round(CM_PX) // ~1см
 const DOT_RADIUS = 1
 
-/* Функция: создаёт паттерн из точек для заливки фона */
+/* Функция: создаёт паттерн точек */
 function makeDotPattern() {
   const p = document.createElement('canvas')
   p.width = GRID_SPACING
   p.height = GRID_SPACING
   const pctx = p.getContext('2d')
-
   pctx.clearRect(0, 0, p.width, p.height)
   pctx.beginPath()
   pctx.arc(GRID_SPACING / 2, GRID_SPACING / 2, DOT_RADIUS, 0, Math.PI * 2)
   pctx.fillStyle = 'rgba(0,0,0,0.18)'
   pctx.fill()
-
   return ctx.createPattern(p, 'repeat')
 }
 
-/* Функция: рисует фон рабочей области точками */
+/* Функция: рисует фон точками */
 function drawBackgroundDots() {
   if (!bgPattern) bgPattern = makeDotPattern()
   ctx.save()
@@ -318,12 +307,12 @@ function hitNode(x, y) {
   return null
 }
 
-/* Функция: возвращает центр прямоугольника entity */
+/* Функция: центр entity */
 function center(n) {
   return { x: n.x + n.width / 2, y: n.y + n.height / 2 }
 }
 
-/* Функция: вычисляет высоту entity по количеству строк (поля + refs) */
+/* Функция: высота entity по строкам (поля + refs) */
 function calcNodeHeight(n) {
   const line = 14
   const header = 24
@@ -338,8 +327,7 @@ function calcNodeHeight(n) {
   return header + padding + totalLines * line
 }
 
-/* ================= GEOMETRY ================= */
-/* Функция: вычисляет точку пересечения линии с границей прямоугольника entity */
+/* Функция: точка пересечения направления с прямоугольником entity */
 function intersection(rect, target) {
   const cx = rect.x + rect.width / 2
   const cy = rect.y + rect.height / 2
@@ -402,6 +390,7 @@ function drawCardinality(type, x, y, angle) {
 }
 
 /* ================= REFERENCES (TRANSITIVE) ================= */
+/* Функция: строит граф ссылок from->to */
 function buildAdjacency() {
   const adj = new Map()
   for (const l of state.links) {
@@ -410,6 +399,8 @@ function buildAdjacency() {
   }
   return adj
 }
+
+/* Функция: собирает все достижимые вершины (вложенные ссылки) */
 function collectReachable(adj, startId) {
   const visited = new Set([startId])
   const stack = [startId]
@@ -426,6 +417,8 @@ function collectReachable(adj, startId) {
   visited.delete(startId)
   return visited
 }
+
+/* Функция: обновляет кэш refsCache: entity -> список заголовков достижимых entity */
 function updateRefsCache() {
   const adj = buildAdjacency()
   const titleById = new Map()
@@ -445,239 +438,45 @@ function updateRefsCache() {
   state.refsCache = cache
 }
 
-/* ================= ROUTING (A* on GRID) ================= */
-const ROUTE_CELL = 18
-const ROUTE_MARGIN = 14
-const ROUTE_MAX_ITERS = 50000
-
-function toCell(p) { return { cx: Math.floor(p.x / ROUTE_CELL), cy: Math.floor(p.y / ROUTE_CELL) } }
-function cellCenter(cx, cy) { return { x: cx * ROUTE_CELL + ROUTE_CELL / 2, y: cy * ROUTE_CELL + ROUTE_CELL / 2 } }
-function cellKey(cx, cy) { return `${cx},${cy}` }
-
-function buildBlockedCells(startPt, endPt) {
-  const blocked = new Set()
-  const wCells = Math.ceil(canvas.width / ROUTE_CELL)
-  const hCells = Math.ceil(canvas.height / ROUTE_CELL)
-
-  for (const n of state.nodes) {
-    const rect = {
-      x: n.x - ROUTE_MARGIN,
-      y: n.y - ROUTE_MARGIN,
-      width: n.width + ROUTE_MARGIN * 2,
-      height: n.height + ROUTE_MARGIN * 2
-    }
-
-    const minCx = Math.max(0, Math.floor(rect.x / ROUTE_CELL))
-    const maxCx = Math.min(wCells - 1, Math.floor((rect.x + rect.width) / ROUTE_CELL))
-    const minCy = Math.max(0, Math.floor(rect.y / ROUTE_CELL))
-    const maxCy = Math.min(hCells - 1, Math.floor((rect.y + rect.height) / ROUTE_CELL))
-
-    for (let cy = minCy; cy <= maxCy; cy++) {
-      for (let cx = minCx; cx <= maxCx; cx++) {
-        const c = cellCenter(cx, cy)
-        if (c.x >= rect.x && c.x <= rect.x + rect.width && c.y >= rect.y && c.y <= rect.y + rect.height) {
-          blocked.add(cellKey(cx, cy))
-        }
-      }
-    }
-  }
-
-  const s = toCell(startPt)
-  const t = toCell(endPt)
-  blocked.delete(cellKey(s.cx, s.cy))
-  blocked.delete(cellKey(t.cx, t.cy))
-  return blocked
-}
-
-function astar(startPt, endPt) {
-  const wCells = Math.ceil(canvas.width / ROUTE_CELL)
-  const hCells = Math.ceil(canvas.height / ROUTE_CELL)
-
-  const start = toCell(startPt)
-  const goal = toCell(endPt)
-  const blocked = buildBlockedCells(startPt, endPt)
-
-  const open = new Map()
-  const cameFrom = new Map()
-  const gScore = new Map()
-
-  const h = (cx, cy) => Math.abs(cx - goal.cx) + Math.abs(cy - goal.cy)
-
-  const startK = cellKey(start.cx, start.cy)
-  gScore.set(startK, 0)
-  open.set(startK, { cx: start.cx, cy: start.cy, f: h(start.cx, start.cy) })
-
-  let iters = 0
-  while (open.size && iters++ < ROUTE_MAX_ITERS) {
-    let currentK = null
-    let current = null
-    for (const [k, v] of open.entries()) {
-      if (!current || v.f < current.f) { current = v; currentK = k }
-    }
-    if (!currentK) break
-    open.delete(currentK)
-
-    if (current.cx === goal.cx && current.cy === goal.cy) {
-      const path = []
-      let k = currentK
-      path.push({ cx: current.cx, cy: current.cy })
-      while (cameFrom.has(k)) {
-        k = cameFrom.get(k)
-        const [cx, cy] = k.split(',').map(Number)
-        path.push({ cx, cy })
-      }
-      path.reverse()
-      return path
-    }
-
-    const neighbors = [
-      { cx: current.cx + 1, cy: current.cy },
-      { cx: current.cx - 1, cy: current.cy },
-      { cx: current.cx, cy: current.cy + 1 },
-      { cx: current.cx, cy: current.cy - 1 }
-    ]
-
-    for (const nb of neighbors) {
-      if (nb.cx < 0 || nb.cy < 0 || nb.cx >= wCells || nb.cy >= hCells) continue
-      const nbK = cellKey(nb.cx, nb.cy)
-      if (blocked.has(nbK)) continue
-
-      const tentativeG = (gScore.get(currentK) ?? Infinity) + 1
-      const oldG = gScore.get(nbK)
-      if (oldG === undefined || tentativeG < oldG) {
-        cameFrom.set(nbK, currentK)
-        gScore.set(nbK, tentativeG)
-        open.set(nbK, { cx: nb.cx, cy: nb.cy, f: tentativeG + h(nb.cx, nb.cy) })
-      }
-    }
-  }
-  return null
-}
-
-function simplifyPolyline(points) {
-  if (points.length <= 2) return points.slice()
-  const out = [points[0]]
-  for (let i = 1; i < points.length - 1; i++) {
-    const a = out[out.length - 1]
-    const b = points[i]
-    const c = points[i + 1]
-    const abx = Math.sign(b.x - a.x), aby = Math.sign(b.y - a.y)
-    const bcx = Math.sign(c.x - b.x), bcy = Math.sign(c.y - b.y)
-    if (abx === bcx && aby === bcy) continue
-    out.push(b)
-  }
-  out.push(points[points.length - 1])
-  return out
-}
-
-function routeLink(link) {
+/* ================= LINKS (STRAIGHT) ================= */
+/*
+  Прямая связь:
+  - считаем 2 точки на границах entity (p1 и p2)
+  - рисуем одну прямую
+*/
+function linkEndpoints(link) {
   const a = state.nodes.find(n => n.id === link.from)
   const b = state.nodes.find(n => n.id === link.to)
   if (!a || !b) return null
 
-  const startAnchor = intersection(a, center(b))
-  const endAnchor   = intersection(b, center(a))
+  const cA = center(a)
+  const cB = center(b)
+  const p1 = intersection(a, cB)
+  const p2 = intersection(b, cA)
 
-  const cellPath = astar(startAnchor, endAnchor)
-  if (!cellPath || cellPath.length < 2) {
-    const pts = [startAnchor, endAnchor]
-    const startDir = { x: endAnchor.x - startAnchor.x, y: endAnchor.y - startAnchor.y }
-    const endDir = { x: startAnchor.x - endAnchor.x, y: startAnchor.y - endAnchor.y }
-    return { points: pts, startDir, endDir }
-  }
+  const startDir = { x: p2.x - p1.x, y: p2.y - p1.y }
+  const endDir   = { x: p1.x - p2.x, y: p1.y - p2.y }
 
-  const pts = [startAnchor]
-  for (let i = 1; i < cellPath.length - 1; i++) pts.push(cellCenter(cellPath[i].cx, cellPath[i].cy))
-  pts.push(endAnchor)
-
-  const simple = simplifyPolyline(pts)
-  const p0 = simple[0], p1 = simple[1] || simple[0]
-  const pn = simple[simple.length - 1], pn1 = simple[simple.length - 2] || pn
-
-  const startDir = { x: p1.x - p0.x, y: p1.y - p0.y }
-  const endDir   = { x: pn1.x - pn.x, y: pn1.y - pn.y }
-  return { points: simple, startDir, endDir }
+  return { a, b, p1, p2, startDir, endDir }
 }
 
-function ensureRouted() {
-  if (state.lastRoutedVersion === state.layoutVersion) return
-  state.linkPaths.clear()
-  for (const l of state.links) {
-    const routed = routeLink(l)
-    if (routed) state.linkPaths.set(l.id, routed)
-  }
-  state.lastRoutedVersion = state.layoutVersion
-}
-
-/* ================= HIT TEST LINK (POLYLINE) ================= */
+/* Функция: hit-test по прямой связи */
 function hitLink(x, y) {
   const TH = 7
-  ensureRouted()
-
   for (let i = state.links.length - 1; i >= 0; i--) {
     const l = state.links[i]
-    const path = state.linkPaths.get(l.id)
-    if (!path || !path.points || path.points.length < 2) continue
-
-    const pts = path.points
-    for (let k = 0; k < pts.length - 1; k++) {
-      const a = pts[k], b = pts[k + 1]
-      if (distPointToSegment(x, y, a.x, a.y, b.x, b.y) <= TH) return l
-    }
+    const ep = linkEndpoints(l)
+    if (!ep) continue
+    if (distPointToSegment(x, y, ep.p1.x, ep.p1.y, ep.p2.x, ep.p2.y) <= TH) return l
   }
   return null
 }
 
-/* ================= BEZIER SMOOTH LINKS ================= */
-const BEZIER_HANDLE = 18
-
-/* Функция: нормализует вектор */
-function norm(vx, vy) {
-  const len = Math.hypot(vx, vy) || 1
-  return { x: vx / len, y: vy / len, len }
-}
-
-/* Функция: рисует путь как последовательность cubic Bezier по ломаной */
-function strokeBezierFromPolyline(points, handlePx) {
-  if (!points || points.length < 2) return
-
-  ctx.beginPath()
-  ctx.moveTo(points[0].x, points[0].y)
-
-  // Строим кубические сегменты между каждым P[i] -> P[i+1],
-  // используя направление (касательные) по соседним точкам.
-  for (let i = 0; i < points.length - 1; i++) {
-    const p0 = points[i - 1] || points[i]
-    const p1 = points[i]
-    const p2 = points[i + 1]
-    const p3 = points[i + 2] || points[i + 1]
-
-    // касательная в p1 и p2 (по типу Catmull-Rom, но с ограничением длины)
-    const t1 = norm(p2.x - p0.x, p2.y - p0.y)
-    const t2 = norm(p3.x - p1.x, p3.y - p1.y)
-
-    // длина текущего сегмента
-    const segLen = Math.hypot(p2.x - p1.x, p2.y - p1.y)
-
-    // ручки ограничиваем: не больше половины сегмента
-    const h = Math.min(handlePx, segLen / 2)
-
-    const c1 = { x: p1.x + t1.x * h, y: p1.y + t1.y * h }
-    const c2 = { x: p2.x - t2.x * h, y: p2.y - t2.y * h }
-
-    ctx.bezierCurveTo(c1.x, c1.y, c2.x, c2.y, p2.x, p2.y)
-  }
-
-  ctx.stroke()
-}
-
 /* ================= DRAW ================= */
+/* Функция: рисует entity */
 function drawNode(n) {
   const newH = calcNodeHeight(n)
-  if ((n.height ?? 0) !== newH) {
-    n.height = newH
-    bumpLayoutVersion()
-  }
+  n.height = newH
 
   ctx.fillStyle = '#ffffff'
   ctx.fillRect(n.x, n.y, n.width, n.height)
@@ -726,28 +525,39 @@ function drawNode(n) {
   }
 }
 
-/* Функция: рисует связь кривыми Безье + кардинальности */
+/* Функция: рисует прямую связь + кардинальности */
 function drawLink(l) {
-  const path = state.linkPaths.get(l.id)
-  if (!path || !path.points || path.points.length < 2) return
+  const ep = linkEndpoints(l)
+  if (!ep) return
 
   const selected = (state.selectedLinkId === l.id)
-  ctx.strokeStyle = selected ? '#1e88e5' : '#222'
-  ctx.lineWidth = selected ? 2 : 1
+  const hovered  = (state.hoveredLinkId === l.id)
+
+  if (selected) {
+    ctx.strokeStyle = '#1e88e5'
+    ctx.lineWidth = 2
+  } else if (hovered) {
+    ctx.strokeStyle = 'rgba(30,136,229,0.85)'
+    ctx.lineWidth = 2
+  } else {
+    ctx.strokeStyle = '#222'
+    ctx.lineWidth = 1
+  }
+
   ctx.setLineDash([])
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
 
-  // Безье-рисование по ломаной
-  strokeBezierFromPolyline(path.points, BEZIER_HANDLE)
+  ctx.beginPath()
+  ctx.moveTo(ep.p1.x, ep.p1.y)
+  ctx.lineTo(ep.p2.x, ep.p2.y)
+  ctx.stroke()
 
-  // кардинальности — на реальных концах
-  const pts = path.points
-  const startAngle = Math.atan2(path.startDir.y, path.startDir.x)
-  const endAngle   = Math.atan2(path.endDir.y, path.endDir.x)
+  const startAngle = Math.atan2(ep.startDir.y, ep.startDir.x)
+  const endAngle   = Math.atan2(ep.endDir.y, ep.endDir.x)
 
-  drawCardinality(l.fromCardinality, pts[0].x, pts[0].y, startAngle)
-  drawCardinality(l.toCardinality, pts[pts.length - 1].x, pts[pts.length - 1].y, endAngle)
+  drawCardinality(l.fromCardinality, ep.p1.x, ep.p1.y, startAngle)
+  drawCardinality(l.toCardinality, ep.p2.x, ep.p2.y, endAngle)
 
   ctx.lineWidth = 1
 }
@@ -758,6 +568,7 @@ const editorTitleInput = document.getElementById('entity-title-input')
 const editorFieldsText = document.getElementById('entity-fields-text')
 const editorErrorEl = document.getElementById('entity-editor-error')
 
+/* Функция: открыть редактор entity */
 function openEntityEditor(node) {
   state.editingNode = node
   editorTitleInput.value = node.title
@@ -767,12 +578,16 @@ function openEntityEditor(node) {
   editorEl.style.display = 'block'
   editorTitleInput.focus()
 }
+
+/* Функция: закрыть редактор entity */
 function closeEntityEditor() {
   state.editingNode = null
   editorEl.style.display = 'none'
   editorErrorEl.style.display = 'none'
   editorErrorEl.textContent = ''
 }
+
+/* Функция: применить изменения из редактора entity */
 function applyEntityEditor() {
   const node = state.editingNode
   if (!node) return
@@ -789,11 +604,14 @@ function applyEntityEditor() {
 
   node.fields = parsed.fields
   closeEntityEditor()
-  bumpLayoutVersion()
 }
+
+/* Функция: сериализация полей в текст */
 function stringifyFields(fields) {
   return fields.map(f => `${f.name}:${f.type}${f.meta ? ' [' + f.meta + ']' : ''}`).join('\n')
 }
+
+/* Функция: парсер текста полей */
 function parseFieldsText(text) {
   const lines = text.split(/\r?\n/)
   const fields = []
@@ -811,6 +629,8 @@ function parseFieldsText(text) {
   if (fields.length === 0) fields.push({ name: 'id', type: 'int', meta: 'PK' })
   return { ok: true, fields }
 }
+
+/* Функция: редактирование одного поля по двойному клику */
 function editSingleField(node, index) {
   const f = node.fields[index]
   const current = `${f.name}:${f.type}${f.meta ? ' [' + f.meta + ']' : ''}`
@@ -821,7 +641,6 @@ function editSingleField(node, index) {
   const m = v.match(/^(\w+)\s*:\s*([A-Za-z0-9_]+)(?:\s*\[(.+)\])?$/)
   if (!m) { alert('Неверный формат. Пример: user_id:int [FK]'); return }
   f.name = m[1]; f.type = m[2]; f.meta = m[3] ? m[3].trim() : null
-  bumpLayoutVersion()
 }
 
 /* ================= EVENTS ================= */
@@ -829,6 +648,7 @@ canvas.onmousedown = e => {
   const x = e.offsetX
   const y = e.offsetY
 
+  // Select: сначала пробуем попадание по связи
   if (state.tool === 'select') {
     const link = hitLink(x, y)
     if (link) {
@@ -841,6 +661,7 @@ canvas.onmousedown = e => {
 
   const hit = hitNode(x, y)
 
+  // Добавить entity
   if (state.tool === 'node') {
     state.nodes.push({
       id: crypto.randomUUID(),
@@ -849,10 +670,10 @@ canvas.onmousedown = e => {
       title: 'Entity',
       fields: [{ name: 'id', type: 'int', meta: 'PK' }]
     })
-    bumpLayoutVersion()
     return
   }
 
+  // Создать связь (2 клика)
   if (state.tool === 'link') {
     if (hit) {
       if (!state.linkDraft) {
@@ -866,7 +687,6 @@ canvas.onmousedown = e => {
           toCardinality: 'many'
         })
         state.linkDraft = null
-        bumpLayoutVersion()
       }
       return
     }
@@ -874,6 +694,7 @@ canvas.onmousedown = e => {
     return
   }
 
+  // Drag entity
   if (state.tool === 'select') {
     if (hit) {
       state.selected = hit
@@ -893,10 +714,19 @@ canvas.onmousemove = e => {
 
   if (state.linkDraft) state.linkDraft.toPoint = { x, y }
 
+  // hover по связи
+  if (state.tool === 'select' && !state.dragging && !state.linkDraft) {
+    const link = hitLink(x, y)
+    state.hoveredLinkId = link ? link.id : null
+    canvas.style.cursor = link ? 'pointer' : 'default'
+  } else {
+    state.hoveredLinkId = null
+    canvas.style.cursor = 'default'
+  }
+
   if (state.dragging && state.selected) {
     state.selected.x = x - state.dragOffset.x
     state.selected.y = y - state.dragOffset.y
-    bumpLayoutVersion()
   }
 }
 
@@ -909,23 +739,22 @@ canvas.ondblclick = e => {
   const x = e.offsetX
   const y = e.offsetY
 
+  // dblclick по связи — удалить
   const link = hitLink(x, y)
   if (link) {
     state.links = state.links.filter(l => l.id !== link.id)
     if (state.selectedLinkId === link.id) state.selectedLinkId = null
-    bumpLayoutVersion()
+    if (state.hoveredLinkId === link.id) state.hoveredLinkId = null
     return
   }
 
+  // dblclick по entity — редактирование
   const node = hitNode(x, y)
   if (!node) return
 
   if (y <= node.y + 24) {
     const t = prompt('Заголовок сущности:', node.title)
-    if (t !== null && t.trim() !== '') {
-      node.title = t.trim()
-      bumpLayoutVersion()
-    }
+    if (t !== null && t.trim() !== '') node.title = t.trim()
     return
   }
 
@@ -957,7 +786,6 @@ addEventListener('keydown', e => {
 /* ================= LOOP ================= */
 function loop() {
   updateRefsCache()
-  ensureRouted()
 
   ctx.clearRect(0, 0, canvas.width, canvas.height)
   drawBackgroundDots()
@@ -965,11 +793,12 @@ function loop() {
   state.links.forEach(drawLink)
   state.nodes.forEach(drawNode)
 
-  // Пунктир при создании связи
+  // Пунктир при создании связи (прямая)
   if (state.linkDraft && state.linkDraft.toPoint) {
     const a = state.linkDraft.from
     const p1 = intersection(a, state.linkDraft.toPoint)
     const p2 = state.linkDraft.toPoint
+
     ctx.strokeStyle = '#222'
     ctx.lineWidth = 1
     ctx.setLineDash([6, 6])
