@@ -1,4 +1,4 @@
-﻿?/* ================= SETUP ================= */
+﻿/* ================= SETUP ================= */
 const canvas = document.getElementById('canvas')
 const ctx = canvas.getContext('2d')
 let bgPattern = null
@@ -9,13 +9,15 @@ const state = {
   links: [],
   tool: 'select',
   selected: null,            // выбранная entity для drag
-  selectedLinkId: null,      // выбранная связь (подсветка)
+  selectedLinkIds: new Set(),// выбранные связи (подсветка)
   hoveredLinkId: null,       // связь под курсором
   dragging: false,
   dragOffset: { x: 0, y: 0 },
   linkDraft: null,           // { from: Node, toPoint:{x,y} }
   editingNode: null,         // редактируемая entity
-  refsCache: new Map()       // Map<nodeId, string[]>
+  refsCache: new Map(),      // Map<nodeId, string[]>
+  hoveredRef: null,          // { nodeId, targetTitle }
+  nextLinkNo: 1
 }
 
 /* Функция: подгоняет размеры canvas под окно браузера */
@@ -106,6 +108,7 @@ function center(n) {
 /* Функция: высота entity по строкам (поля + refs) */
 function calcNodeHeight(n) {
   const line = 14
+  const refLine = line * 2
   const header = 24
   const padding = 16
 
@@ -114,8 +117,7 @@ function calcNodeHeight(n) {
   const refsHeaderLines = refs.length > 0 ? 1 : 0
   const refsLines = refs.length
 
-  const totalLines = fieldsLines + refsHeaderLines + refsLines
-  return header + padding + totalLines * line
+  return header + padding + (fieldsLines + refsHeaderLines) * line + refsLines * refLine
 }
 
 /* Функция: точка пересечения направления с прямоугольником entity */
@@ -229,6 +231,191 @@ function updateRefsCache() {
   state.refsCache = cache
 }
 
+/* ================= LINK NUMBERS ================= */
+function ensureLinkNumbers() {
+  let maxNum = 0
+  for (const l of state.links) {
+    if (typeof l.num === 'number' && Number.isFinite(l.num)) {
+      if (l.num > maxNum) maxNum = l.num
+    }
+  }
+  let next = maxNum + 1
+  for (const l of state.links) {
+    if (typeof l.num !== 'number' || !Number.isFinite(l.num)) {
+      l.num = next
+      next++
+    }
+  }
+  state.nextLinkNo = next
+}
+
+/* ================= REFERENCES HIT TEST ================= */
+function hitReference(x, y) {
+  const lineH = 14
+  const refLineH = lineH * 2
+  for (let i = state.nodes.length - 1; i >= 0; i--) {
+    const n = state.nodes[i]
+    const nodeH = calcNodeHeight(n)
+    if (x < n.x || x > n.x + n.width || y < n.y || y > n.y + nodeH) continue
+
+    const refs = state.refsCache.get(n.id) || []
+    if (refs.length === 0) continue
+
+    const refsStartY = n.y + 40 + n.fields.length * lineH + 2 * lineH
+    for (let r = 0; r < refs.length; r++) {
+      const baseY = refsStartY + r * refLineH
+      if (y >= baseY - lineH + 2 && y <= baseY + 2) {
+        return { nodeId: n.id, targetTitle: refs[r] }
+      }
+    }
+  }
+  return null
+}
+
+function findNodeByTitle(title) {
+  const t = normalizeTitle(title)
+  if (!t) return null
+  return state.nodes.find(n => normalizeTitle(n.title) === t) || null
+}
+
+function findFirstLinkIdOnPath(fromId, toId) {
+  const path = findPathLinkIds(fromId, toId)
+  return path.length ? path[0] : null
+}
+
+function findPathLinkIds(fromId, toId) {
+  if (fromId === toId) return []
+  const queue = [fromId]
+  const prev = new Map()
+  prev.set(fromId, null)
+
+  while (queue.length) {
+    const v = queue.shift()
+    if (v === toId) break
+    for (const l of state.links) {
+      if (l.from !== v) continue
+      const next = l.to
+      if (prev.has(next)) continue
+      prev.set(next, { prevId: v, linkId: l.id })
+      queue.push(next)
+    }
+  }
+
+  if (!prev.has(toId)) return []
+  const ids = []
+  let cur = toId
+  let step = prev.get(cur)
+  while (step) {
+    ids.push(step.linkId)
+    if (step.prevId === fromId) break
+    cur = step.prevId
+    step = prev.get(cur)
+  }
+  ids.reverse()
+  return ids
+}
+
+function findLinkIdFromNodeToTitle(fromNode, title) {
+  const target = findNodeByTitle(title)
+  if (!target) return null
+  const direct = state.links.find(l => l.from === fromNode.id && l.to === target.id)
+  if (direct) return direct.id
+  return findFirstLinkIdOnPath(fromNode.id, target.id)
+}
+
+/* ================= EXTERNAL LINK SELECTION ================= */
+function normalizeTitle(v) {
+  return String(v || '').trim().toLowerCase()
+}
+
+function getLinkLabel(link) {
+  const a = state.nodes.find(n => n.id === link.from)
+  const b = state.nodes.find(n => n.id === link.to)
+  if (!a || !b) return ''
+  return `${a.title} -> ${b.title}`
+}
+
+function normalizeLabel(v) {
+  return String(v || '')
+    .toLowerCase()
+    .replace(/[\u2192\u2014\u2013]/g, '->')
+    .replace(/\s*->\s*/g, '->')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function findLinkById(id) {
+  return state.links.find(l => l.id === id) || null
+}
+
+function findLinkByTitles(fromTitle, toTitle) {
+  const fromN = normalizeTitle(fromTitle)
+  const toN = normalizeTitle(toTitle)
+  if (!fromN || !toN) return null
+  for (const l of state.links) {
+    const a = state.nodes.find(n => n.id === l.from)
+    const b = state.nodes.find(n => n.id === l.to)
+    if (!a || !b) continue
+    if (normalizeTitle(a.title) === fromN && normalizeTitle(b.title) === toN) return l
+  }
+  return null
+}
+
+function findLinkByLabel(label) {
+  const target = normalizeLabel(label)
+  if (!target) return null
+  for (const l of state.links) {
+    const lbl = normalizeLabel(getLinkLabel(l))
+    if (lbl === target) return l
+  }
+  return null
+}
+
+function selectLink(link) {
+  state.selectedLinkIds = link ? new Set([link.id]) : new Set()
+}
+
+function clearLinkSelection() {
+  state.selectedLinkIds = new Set()
+}
+
+function selectLinkIds(ids) {
+  state.selectedLinkIds = new Set(ids || [])
+}
+
+function handleExternalLinkSelect(data) {
+  if (!data || typeof data !== 'object') return
+  const type = data.type || data.action
+  if (type === 'clear-link-selection') {
+    clearLinkSelection()
+    return
+  }
+  if (type !== 'select-link' && type !== 'link-select') return
+
+  let link = null
+  if (data.id) link = findLinkById(data.id)
+  if (!link && data.from && data.to) link = findLinkByTitles(data.from, data.to)
+  if (!link && data.label) link = findLinkByLabel(data.label)
+  selectLink(link)
+}
+
+function isMessageFromParent(e) {
+  if (window.parent === window) return true
+  return e.source === window.parent
+}
+
+addEventListener('message', (e) => {
+  if (!isMessageFromParent(e)) return
+  handleExternalLinkSelect(e.data)
+})
+
+window.schemeEditor = {
+  selectLinkById: (id) => selectLink(findLinkById(id)),
+  selectLinkByTitles: (fromTitle, toTitle) => selectLink(findLinkByTitles(fromTitle, toTitle)),
+  selectLinkByLabel: (label) => selectLink(findLinkByLabel(label)),
+  clearLinkSelection
+}
+
 /* ================= LINKS (STRAIGHT) ================= */
 /*
   Прямая связь:
@@ -286,6 +473,7 @@ function drawNode(n) {
 
   ctx.font = '12px monospace'
   const lineH = 14
+  const refLineH = lineH * 2
   let y = n.y + 40
 
   n.fields.forEach((f) => {
@@ -310,8 +498,20 @@ function drawNode(n) {
 
     ctx.font = '12px monospace'
     refs.forEach((t) => {
-      ctx.fillText(`→ ${t}`, n.x + 6, y)
-      y += lineH
+      const linkId = findLinkIdFromNodeToTitle(n, t)
+      const link = linkId ? state.links.find(l => l.id === linkId) : null
+      const num = (link && typeof link.num === 'number' && Number.isFinite(link.num)) ? link.num : null
+      const text = num ? `#${num} → ${t}` : `→ ${t}`
+      const textX = n.x + 6
+      if (state.hoveredRef &&
+          state.hoveredRef.nodeId === n.id &&
+          state.hoveredRef.targetTitle === t) {
+        ctx.fillStyle = 'rgba(255, 241, 150, 0.7)'
+        ctx.fillRect(n.x + 4, y - lineH + 2, n.width - 8, lineH)
+        ctx.fillStyle = '#000'
+      }
+      ctx.fillText(text, textX, y)
+      y += refLineH
     })
   }
 }
@@ -321,7 +521,7 @@ function drawLink(l) {
   const ep = linkEndpoints(l)
   if (!ep) return
 
-  const selected = (state.selectedLinkId === l.id)
+  const selected = state.selectedLinkIds.has(l.id)
   const hovered  = (state.hoveredLinkId === l.id)
 
   if (selected) {
@@ -350,14 +550,73 @@ function drawLink(l) {
   drawCardinality(l.fromCardinality, ep.p1.x, ep.p1.y, startAngle)
   drawCardinality(l.toCardinality, ep.p2.x, ep.p2.y, endAngle)
 
+  // Label (link number)
+  if (typeof l.num === 'number' && Number.isFinite(l.num)) {
+    const midX = (ep.p1.x + ep.p2.x) / 2
+    const midY = (ep.p1.y + ep.p2.y) / 2
+    const nx = ep.p2.y - ep.p1.y
+    const ny = -(ep.p2.x - ep.p1.x)
+    const nlen = Math.hypot(nx, ny) || 1
+    const offset = 10
+    const lx = midX + (nx / nlen) * offset
+    const ly = midY + (ny / nlen) * offset
+
+    const label = `#${l.num}`
+    ctx.font = '11px sans-serif'
+    const textW = ctx.measureText(label).width
+    const textH = 12
+    const pad = 3
+    const rx = lx - textW / 2 - pad
+    const ry = ly - textH / 2 - pad + 1
+    ctx.fillStyle = 'rgba(255,255,255,0.9)'
+    ctx.fillRect(rx, ry, textW + pad * 2, textH + pad * 2)
+    ctx.strokeStyle = 'rgba(0,0,0,0.2)'
+    ctx.lineWidth = 1
+    ctx.strokeRect(rx, ry, textW + pad * 2, textH + pad * 2)
+    ctx.fillStyle = '#000'
+    ctx.fillText(label, lx - textW / 2, ly + textH / 2 - 2)
+  }
+
   ctx.lineWidth = 1
 }
 
 /* ================= ENTITY EDITOR ================= */
 const editorEl = document.getElementById('entity-editor')
+const editorHeaderEl = document.getElementById('entity-editor-header')
 const editorTitleInput = document.getElementById('entity-title-input')
 const editorFieldsText = document.getElementById('entity-fields-text')
 const editorErrorEl = document.getElementById('entity-editor-error')
+
+let editorDragging = false
+let editorDragOffset = { x: 0, y: 0 }
+
+function startEditorDrag(e) {
+  if (e.button !== 0) return
+  if (editorEl.style.display !== 'block') return
+  e.preventDefault()
+  e.stopPropagation()
+  const rect = editorEl.getBoundingClientRect()
+  editorDragging = true
+  editorDragOffset = { x: e.clientX - rect.left, y: e.clientY - rect.top }
+}
+
+function onEditorDrag(e) {
+  if (!editorDragging) return
+  const x = e.clientX - editorDragOffset.x
+  const y = e.clientY - editorDragOffset.y
+  editorEl.style.left = `${x}px`
+  editorEl.style.top = `${y}px`
+}
+
+function stopEditorDrag() {
+  editorDragging = false
+}
+
+if (editorHeaderEl) {
+  editorHeaderEl.addEventListener('mousedown', startEditorDrag)
+}
+addEventListener('mousemove', onEditorDrag)
+addEventListener('mouseup', stopEditorDrag)
 
 /* Функция: открыть редактор entity */
 function openEntityEditor(node) {
@@ -439,11 +698,27 @@ canvas.onmousedown = e => {
   const x = e.offsetX
   const y = e.offsetY
 
+  // Click по списку references — подсветка связи
+  const refHit = hitReference(x, y)
+  if (refHit) {
+    const fromNode = state.nodes.find(n => n.id === refHit.nodeId)
+    if (fromNode) {
+      const linkIds = findPathLinkIds(fromNode.id, findNodeByTitle(refHit.targetTitle)?.id || '')
+      selectLinkIds(linkIds)
+    } else {
+      clearLinkSelection()
+    }
+    state.dragging = false
+    state.selected = null
+    state.linkDraft = null
+    return
+  }
+
   // Select: сначала пробуем попадание по связи
   if (state.tool === 'select') {
     const link = hitLink(x, y)
     if (link) {
-      state.selectedLinkId = link.id
+      selectLink(link)
       state.dragging = false
       state.selected = null
       return
@@ -474,6 +749,7 @@ canvas.onmousedown = e => {
           id: crypto.randomUUID(),
           from: state.linkDraft.from.id,
           to: hit.id,
+          num: state.nextLinkNo++,
           fromCardinality: 'one',
           toCardinality: 'many'
         })
@@ -491,10 +767,10 @@ canvas.onmousedown = e => {
       state.selected = hit
       state.dragging = true
       state.dragOffset = { x: x - hit.x, y: y - hit.y }
-      state.selectedLinkId = null
+      clearLinkSelection()
       return
     }
-    state.selectedLinkId = null
+    clearLinkSelection()
     state.selected = null
   }
 }
@@ -505,14 +781,17 @@ canvas.onmousemove = e => {
 
   if (state.linkDraft) state.linkDraft.toPoint = { x, y }
 
+  const refHit = hitReference(x, y)
+  state.hoveredRef = refHit ? { nodeId: refHit.nodeId, targetTitle: refHit.targetTitle } : null
+
   // hover по связи
   if (state.tool === 'select' && !state.dragging && !state.linkDraft) {
     const link = hitLink(x, y)
     state.hoveredLinkId = link ? link.id : null
-    canvas.style.cursor = link ? 'pointer' : 'default'
+    canvas.style.cursor = (link || refHit) ? 'pointer' : 'default'
   } else {
     state.hoveredLinkId = null
-    canvas.style.cursor = 'default'
+    canvas.style.cursor = refHit ? 'pointer' : 'default'
   }
 
   if (state.dragging && state.selected) {
@@ -526,6 +805,11 @@ canvas.onmouseup = () => {
   state.selected = null
 }
 
+canvas.onmouseleave = () => {
+  state.hoveredRef = null
+  state.hoveredLinkId = null
+}
+
 canvas.ondblclick = e => {
   const x = e.offsetX
   const y = e.offsetY
@@ -534,7 +818,7 @@ canvas.ondblclick = e => {
   const link = hitLink(x, y)
   if (link) {
     state.links = state.links.filter(l => l.id !== link.id)
-    if (state.selectedLinkId === link.id) state.selectedLinkId = null
+    if (state.selectedLinkIds.has(link.id)) clearLinkSelection()
     if (state.hoveredLinkId === link.id) state.hoveredLinkId = null
     return
   }
@@ -567,7 +851,7 @@ addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     state.linkDraft = null
     if (editorEl.style.display === 'block') closeEntityEditor()
-    state.selectedLinkId = null
+    clearLinkSelection()
   }
   if (e.key === '1') setTool('select')
   if (e.key === '2') setTool('node')
@@ -577,6 +861,7 @@ addEventListener('keydown', e => {
 /* ================= LOOP ================= */
 function loop() {
   updateRefsCache()
+  ensureLinkNumbers()
 
   ctx.clearRect(0, 0, canvas.width, canvas.height)
   drawBackgroundDots()

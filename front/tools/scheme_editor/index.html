@@ -1,4 +1,4 @@
-﻿?<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
@@ -125,13 +125,26 @@
       width: 360px;
       background: #fff;
       border: 1px solid #ccc;
-      padding: 10px;
+      padding: 0;
       z-index: 30;
       display: none;
       box-shadow: 0 6px 18px rgba(0,0,0,0.12);
       border-radius: 12px;
     }
-    #entity-editor h3 { margin: 0 0 8px 0; font-size: 14px; }
+    #entity-editor-header{
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      border-bottom: 1px solid #e5e5e5;
+      background: #f7f7f7;
+      border-top-left-radius: 12px;
+      border-top-right-radius: 12px;
+      cursor: move;
+      user-select: none;
+    }
+    #entity-editor-header h3 { margin: 0; font-size: 14px; }
+    #entity-editor-body { padding: 10px; }
     #entity-editor label { display: block; font-size: 12px; margin: 8px 0 4px; }
     #entity-title-input { width: 100%; box-sizing: border-box; padding: 6px; font-size: 12px; }
     #entity-fields-text {
@@ -180,7 +193,10 @@
 <div id="toolstatus">Tool: <b id="toolstatusValue">select</b></div>
 
 <div id="entity-editor">
-  <h3>Entity editor</h3>
+  <div id="entity-editor-header">
+    <h3>Entity editor</h3>
+  </div>
+  <div id="entity-editor-body">
 
   <label for="entity-title-input">Заголовок</label>
   <input id="entity-title-input" type="text" />
@@ -202,6 +218,7 @@ email:varchar"></textarea>
   </div>
 
   <div id="entity-editor-error" class="error"></div>
+  </div>
 </div>
 
 <canvas id="canvas"></canvas>
