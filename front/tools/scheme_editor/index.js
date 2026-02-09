@@ -2,11 +2,32 @@
 const canvas = document.getElementById('canvas')
 const ctx = canvas.getContext('2d')
 let bgPattern = null
+const data = window.schemeData || (window.schemeData = {
+  nodes: [],
+  links: [],
+  nextEntityId: 1,
+  nextLinkNo: 1
+})
+const STORAGE_KEY = 'schemeData'
+let lastSaved = ''
+
+function saveSchemeData() {
+  try {
+    const json = JSON.stringify(data)
+    if (json !== lastSaved) {
+      localStorage.setItem(STORAGE_KEY, json)
+      lastSaved = json
+    }
+  } catch {}
+}
+
+setInterval(saveSchemeData, 1000)
+addEventListener('beforeunload', saveSchemeData)
 
 /* ================= STATE ================= */
 const state = {
-  nodes: [],
-  links: [],
+  nodes: data.nodes,
+  links: data.links,
   tool: 'select',
   selected: null,            // выбранная entity для drag
   selectedLinkIds: new Set(),// выбранные связи (подсветка)
@@ -16,8 +37,7 @@ const state = {
   linkDraft: null,           // { from: Node, toPoint:{x,y} }
   editingNode: null,         // редактируемая entity
   refsCache: new Map(),      // Map<nodeId, string[]>
-  hoveredRef: null,          // { nodeId, targetTitle }
-  nextLinkNo: 1
+  hoveredRef: null           // { nodeId, targetTitle }
 }
 
 /* Функция: подгоняет размеры canvas под окно браузера */
@@ -231,6 +251,24 @@ function updateRefsCache() {
   state.refsCache = cache
 }
 
+/* ================= ENTITY IDS ================= */
+function ensureEntityIds() {
+  let maxId = 0
+  for (const n of state.nodes) {
+    if (typeof n.id === 'number' && Number.isFinite(n.id)) {
+      if (n.id > maxId) maxId = n.id
+    }
+  }
+  let next = Math.max(data.nextEntityId || 1, maxId + 1)
+  for (const n of state.nodes) {
+    if (n.id === null || n.id === undefined || n.id === '') {
+      n.id = next
+      next++
+    }
+  }
+  data.nextEntityId = next
+}
+
 /* ================= LINK NUMBERS ================= */
 function ensureLinkNumbers() {
   let maxNum = 0
@@ -246,7 +284,7 @@ function ensureLinkNumbers() {
       next++
     }
   }
-  state.nextLinkNo = next
+  data.nextLinkNo = next
 }
 
 /* ================= REFERENCES HIT TEST ================= */
@@ -730,7 +768,7 @@ canvas.onmousedown = e => {
   // Добавить entity
   if (state.tool === 'node') {
     state.nodes.push({
-      id: crypto.randomUUID(),
+      id: data.nextEntityId++,
       x, y,
       width: 220,
       title: 'Entity',
@@ -749,7 +787,7 @@ canvas.onmousedown = e => {
           id: crypto.randomUUID(),
           from: state.linkDraft.from.id,
           to: hit.id,
-          num: state.nextLinkNo++,
+          num: data.nextLinkNo++,
           fromCardinality: 'one',
           toCardinality: 'many'
         })
@@ -861,6 +899,7 @@ addEventListener('keydown', e => {
 /* ================= LOOP ================= */
 function loop() {
   updateRefsCache()
+  ensureEntityIds()
   ensureLinkNumbers()
 
   ctx.clearRect(0, 0, canvas.width, canvas.height)
