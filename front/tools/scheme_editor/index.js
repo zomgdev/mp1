@@ -697,7 +697,7 @@ function drawNode(n) {
   }
   roundRectPath(ctx, x, y, w, h, ENTITY_RADIUS)
   ctx.stroke()
-
+  // тут рисуем заголовок entity
   ctx.fillStyle = '#eeeeee'
   ctx.lineWidth = 1
   const headerH = 24 * view.scale
