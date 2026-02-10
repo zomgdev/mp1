@@ -43,7 +43,27 @@ const state = {
   hoveredRef: null           // { nodeId, targetTitle }
 }
 
-const camera = { x: 0, y: 0 }
+const view = { x: 0, y: 0, scale: 1 }
+const MIN_SCALE = 0.3
+const MAX_SCALE = 3
+
+function toWorld(x, y) {
+  return {
+    x: (x - view.x) / view.scale,
+    y: (y - view.y) / view.scale
+  }
+}
+
+function toScreen(x, y) {
+  return {
+    x: x * view.scale + view.x,
+    y: y * view.scale + view.y
+  }
+}
+
+function clampScale(v) {
+  return Math.max(MIN_SCALE, Math.min(MAX_SCALE, v))
+}
 
 /* Функция: подгоняет размеры canvas под окно браузера */
 function resize() {
@@ -85,6 +105,29 @@ function initToolPanel() {
 initToolPanel()
 setTool('select')
 
+/* ================= HELP ================= */
+const helpBtn = document.getElementById('help-btn')
+const helpModal = document.getElementById('help-modal')
+const helpClose = document.getElementById('help-close')
+
+function openHelp() {
+  if (!helpModal) return
+  helpModal.classList.remove('hidden')
+}
+
+function closeHelp() {
+  if (!helpModal) return
+  helpModal.classList.add('hidden')
+}
+
+if (helpBtn) helpBtn.addEventListener('click', openHelp)
+if (helpClose) helpClose.addEventListener('click', closeHelp)
+if (helpModal) {
+  helpModal.addEventListener('click', (e) => {
+    if (e.target === helpModal) closeHelp()
+  })
+}
+
 /* ================= BACKGROUND DOT GRID ================= */
 const CM_PX = 37.8
 const GRID_SPACING = Math.round(CM_PX) // ~1см
@@ -110,8 +153,14 @@ function drawBackgroundDots() {
   ctx.save()
   ctx.setTransform(1, 0, 0, 1, 0, 0)
   ctx.fillStyle = bgPattern
-  ctx.translate(camera.x, camera.y)
-  ctx.fillRect(-camera.x, -camera.y, canvas.width, canvas.height)
+  ctx.translate(view.x, view.y)
+  ctx.scale(view.scale, view.scale)
+  ctx.fillRect(
+    -view.x / view.scale,
+    -view.y / view.scale,
+    canvas.width / view.scale,
+    canvas.height / view.scale
+  )
   ctx.restore()
 }
 
@@ -179,7 +228,8 @@ function distPointToSegment(px, py, x1, y1, x2, y2) {
 
 /* ================= CARDINALITY ================= */
 function drawCrowFoot(x, y, angle) {
-  const s = 10, sp = Math.PI / 6
+  const s = 10 * view.scale
+  const sp = Math.PI / 6
   for (let i of [-1, 0, 1]) {
     ctx.beginPath()
     ctx.moveTo(x, y)
@@ -191,7 +241,8 @@ function drawCrowFoot(x, y, angle) {
   }
 }
 function drawOne(x, y, angle) {
-  const s = 8, a = angle + Math.PI / 2
+  const s = 8 * view.scale
+  const a = angle + Math.PI / 2
   ctx.beginPath()
   ctx.moveTo(x + Math.cos(a) * s, y + Math.sin(a) * s)
   ctx.lineTo(x - Math.cos(a) * s, y - Math.sin(a) * s)
@@ -199,7 +250,7 @@ function drawOne(x, y, angle) {
 }
 function drawZero(x, y) {
   ctx.beginPath()
-  ctx.arc(x, y, 4, 0, Math.PI * 2)
+  ctx.arc(x, y, 4 * view.scale, 0, Math.PI * 2)
   ctx.stroke()
 }
 function drawCardinality(type, x, y, angle) {
@@ -484,7 +535,7 @@ function linkEndpoints(link) {
 
 /* Функция: hit-test по прямой связи */
 function hitLink(x, y) {
-  const TH = 7
+  const TH = 7 / view.scale
   for (let i = state.links.length - 1; i >= 0; i--) {
     const l = state.links[i]
     const ep = linkEndpoints(l)
@@ -530,10 +581,11 @@ function drawNode(n) {
   const newH = calcNodeHeight(n)
   n.height = newH
 
-  const x = n.x + camera.x
-  const y = n.y + camera.y
-  const w = n.width
-  const h = n.height
+  const pos = toScreen(n.x, n.y)
+  const x = pos.x
+  const y = pos.y
+  const w = n.width * view.scale
+  const h = n.height * view.scale
 
   ctx.fillStyle = '#ffffff'
   roundRectPath(ctx, x, y, w, h, ENTITY_RADIUS)
@@ -545,59 +597,71 @@ function drawNode(n) {
   ctx.stroke()
 
   ctx.fillStyle = '#eeeeee'
-  roundTopRectPath(ctx, x, y, w, 24, ENTITY_RADIUS)
+  const headerH = 24 * view.scale
+  roundTopRectPath(ctx, x, y, w, headerH, ENTITY_RADIUS)
   ctx.fill()
   ctx.strokeStyle = 'rgba(0,0,0,0.15)'
   ctx.beginPath()
-  ctx.moveTo(x + 1, y + 24)
-  ctx.lineTo(x + w - 1, y + 24)
+  ctx.moveTo(x + 1, y + headerH)
+  ctx.lineTo(x + w - 1, y + headerH)
   ctx.stroke()
 
   ctx.fillStyle = '#000'
-  ctx.font = 'bold 12px sans-serif'
-  ctx.fillText(n.title, x + 6, y + 16)
+  const titleFont = Math.max(6, 12 * view.scale)
+  ctx.font = `bold ${titleFont}px sans-serif`
+  ctx.fillText(n.title, x + 6 * view.scale, y + 16 * view.scale)
 
-  ctx.font = '12px monospace'
+  const bodyFont = Math.max(6, 12 * view.scale)
+  ctx.font = `${bodyFont}px monospace`
   const lineH = 14
   const refLineH = lineH * 2
-  let yCursor = y + 40
+  let yCursor = y + 40 * view.scale
 
   n.fields.forEach((f) => {
-    ctx.fillText(`${f.name}: ${f.type}${f.meta ? ' [' + f.meta + ']' : ''}`, x + 6, yCursor)
-    yCursor += lineH
+    ctx.fillText(
+      `${f.name}: ${f.type}${f.meta ? ' [' + f.meta + ']' : ''}`,
+      x + 6 * view.scale,
+      yCursor
+    )
+    yCursor += lineH * view.scale
   })
 
   const refs = state.refsCache.get(n.id) || []
   if (refs.length > 0) {
     ctx.strokeStyle = 'rgba(0,0,0,0.15)'
     ctx.beginPath()
-    ctx.moveTo(x + 4, yCursor + 4)
-    ctx.lineTo(x + w - 4, yCursor + 4)
+    ctx.moveTo(x + 4 * view.scale, yCursor + 4 * view.scale)
+    ctx.lineTo(x + w - 4 * view.scale, yCursor + 4 * view.scale)
     ctx.stroke()
 
-    yCursor += lineH
+    yCursor += lineH * view.scale
 
     ctx.fillStyle = '#000'
-    ctx.font = 'bold 12px sans-serif'
-    ctx.fillText('References:', x + 6, yCursor)
-    yCursor += lineH
+    ctx.font = `bold ${titleFont}px sans-serif`
+    ctx.fillText('References:', x + 6 * view.scale, yCursor)
+    yCursor += lineH * view.scale
 
-    ctx.font = '12px monospace'
+    ctx.font = `${bodyFont}px monospace`
     refs.forEach((t) => {
       const linkId = findLinkIdFromNodeToTitle(n, t)
       const link = linkId ? state.links.find(l => l.id === linkId) : null
       const num = (link && typeof link.num === 'number' && Number.isFinite(link.num)) ? link.num : null
       const text = num ? `#${num} → ${t}` : `→ ${t}`
-      const textX = x + 6
+      const textX = x + 6 * view.scale
       if (state.hoveredRef &&
           state.hoveredRef.nodeId === n.id &&
           state.hoveredRef.targetTitle === t) {
         ctx.fillStyle = 'rgba(255, 241, 150, 0.7)'
-        ctx.fillRect(x + 4, yCursor - lineH + 2, w - 8, lineH)
+        ctx.fillRect(
+          x + 4 * view.scale,
+          yCursor - lineH * view.scale + 2 * view.scale,
+          w - 8 * view.scale,
+          lineH * view.scale
+        )
         ctx.fillStyle = '#000'
       }
       ctx.fillText(text, textX, yCursor)
-      yCursor += refLineH
+      yCursor += refLineH * view.scale
     })
   }
 }
@@ -626,15 +690,17 @@ function drawLink(l) {
   ctx.lineJoin = 'round'
 
   ctx.beginPath()
-  ctx.moveTo(ep.p1.x + camera.x, ep.p1.y + camera.y)
-  ctx.lineTo(ep.p2.x + camera.x, ep.p2.y + camera.y)
+  const p1s = toScreen(ep.p1.x, ep.p1.y)
+  const p2s = toScreen(ep.p2.x, ep.p2.y)
+  ctx.moveTo(p1s.x, p1s.y)
+  ctx.lineTo(p2s.x, p2s.y)
   ctx.stroke()
 
   const startAngle = Math.atan2(ep.startDir.y, ep.startDir.x)
   const endAngle   = Math.atan2(ep.endDir.y, ep.endDir.x)
 
-  drawCardinality(l.fromCardinality, ep.p1.x + camera.x, ep.p1.y + camera.y, startAngle)
-  drawCardinality(l.toCardinality, ep.p2.x + camera.x, ep.p2.y + camera.y, endAngle)
+  drawCardinality(l.fromCardinality, p1s.x, p1s.y, startAngle)
+  drawCardinality(l.toCardinality, p2s.x, p2s.y, endAngle)
 
   // Label (link number)
   if (typeof l.num === 'number' && Number.isFinite(l.num)) {
@@ -644,14 +710,15 @@ function drawLink(l) {
     const ny = -(ep.p2.x - ep.p1.x)
     const nlen = Math.hypot(nx, ny) || 1
     const offset = 10
-    const lx = midX + (nx / nlen) * offset + camera.x
-    const ly = midY + (ny / nlen) * offset + camera.y
+    const lx = (midX + (nx / nlen) * offset) * view.scale + view.x
+    const ly = (midY + (ny / nlen) * offset) * view.scale + view.y
 
     const label = `#${l.num}`
-    ctx.font = '11px sans-serif'
+    const labelFont = Math.max(6, 11 * view.scale)
+    ctx.font = `${labelFont}px sans-serif`
     const textW = ctx.measureText(label).width
-    const textH = 12
-    const pad = 3
+    const textH = 12 * view.scale
+    const pad = 3 * view.scale
     const rx = lx - textW / 2 - pad
     const ry = ly - textH / 2 - pad + 1
     ctx.fillStyle = 'rgba(255,255,255,0.9)'
@@ -783,14 +850,15 @@ function editSingleField(node, index) {
 canvas.onmousedown = e => {
   const x = e.offsetX
   const y = e.offsetY
-  const wx = x - camera.x
-  const wy = y - camera.y
+  const world = toWorld(x, y)
+  const wx = world.x
+  const wy = world.y
 
   // Right mouse: pan
   if (e.button === 2) {
     state.panning = true
     state.panStart = { x, y }
-    state.camStart = { x: camera.x, y: camera.y }
+    state.camStart = { x: view.x, y: view.y }
     state.dragging = false
     state.selected = null
     return
@@ -827,11 +895,12 @@ canvas.onmousedown = e => {
 
   // Добавить entity
   if (state.tool === 'node') {
+    const newId = data.nextEntityId++
     state.nodes.push({
-      id: data.nextEntityId++,
+      id: newId,
       x: wx, y: wy,
       width: 220,
-      title: 'Entity',
+      title: `Entity ${newId}`,
       fields: [{ name: 'id', type: 'int', meta: 'PK' }]
     })
     return
@@ -876,12 +945,13 @@ canvas.onmousedown = e => {
 canvas.onmousemove = e => {
   const x = e.offsetX
   const y = e.offsetY
-  const wx = x - camera.x
-  const wy = y - camera.y
+  const world = toWorld(x, y)
+  const wx = world.x
+  const wy = world.y
 
   if (state.panning) {
-    camera.x = state.camStart.x + (x - state.panStart.x)
-    camera.y = state.camStart.y + (y - state.panStart.y)
+    view.x = state.camStart.x + (x - state.panStart.x)
+    view.y = state.camStart.y + (y - state.panStart.y)
     return
   }
 
@@ -921,8 +991,9 @@ canvas.onmouseleave = () => {
 canvas.ondblclick = e => {
   const x = e.offsetX
   const y = e.offsetY
-  const wx = x - camera.x
-  const wy = y - camera.y
+  const world = toWorld(x, y)
+  const wx = world.x
+  const wy = world.y
 
   // dblclick по связи — удалить
   const link = hitLink(wx, wy)
@@ -956,10 +1027,26 @@ canvas.oncontextmenu = e => {
   state.linkDraft = null
 }
 
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault()
+  const x = e.offsetX
+  const y = e.offsetY
+  const prev = view.scale
+  const factor = Math.exp(-e.deltaY * 0.0015)
+  const next = clampScale(prev * factor)
+  if (next === prev) return
+
+  const world = toWorld(x, y)
+  view.scale = next
+  view.x = x - world.x * view.scale
+  view.y = y - world.y * view.scale
+}, { passive: false })
+
 addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     state.linkDraft = null
     if (editorEl.style.display === 'block') closeEntityEditor()
+    if (helpModal && !helpModal.classList.contains('hidden')) closeHelp()
     clearLinkSelection()
   }
   if (e.key === '1') setTool('select')
@@ -989,8 +1076,10 @@ function loop() {
     ctx.lineWidth = 1
     ctx.setLineDash([6, 6])
     ctx.beginPath()
-    ctx.moveTo(p1.x + camera.x, p1.y + camera.y)
-    ctx.lineTo(p2.x + camera.x, p2.y + camera.y)
+    const p1s = toScreen(p1.x, p1.y)
+    const p2s = toScreen(p2.x, p2.y)
+    ctx.moveTo(p1s.x, p1s.y)
+    ctx.lineTo(p2s.x, p2s.y)
     ctx.stroke()
     ctx.setLineDash([])
   }

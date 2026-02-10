@@ -117,6 +117,43 @@
       user-select: none;
     }
 
+    /* Help modal */
+    #help-modal {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,0,0.35);
+      z-index: 50;
+    }
+    #help-modal.hidden { display: none; }
+    .help-card {
+      width: min(560px, calc(100vw - 24px));
+      background: #fff;
+      border-radius: 14px;
+      border: 1px solid #e2e2e2;
+      box-shadow: 0 12px 34px rgba(0,0,0,0.18);
+      padding: 14px 16px 16px;
+    }
+    .help-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .help-title { margin: 0; font-size: 15px; }
+    .help-close {
+      border: 1px solid #ddd;
+      background: #f7f7f7;
+      border-radius: 8px;
+      padding: 4px 8px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .help-list { margin: 0; padding-left: 16px; font-size: 13px; line-height: 1.45; }
+    .help-list li { margin: 6px 0; }
+
     /* Панель редактора сущности */
     #entity-editor {
       position: fixed;
@@ -165,13 +202,13 @@
 <body>
 
 <div id="toolpanel" aria-label="Tools">
-  <button type="button" class="toolbtn active" data-tool="select" data-tip="Выбор / Перемещение (Select)">
+  <button type="button" class="toolbtn active" data-tool="select" data-tip="Выбор / Перемещение (Select) — Hotkey: 1">
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path d="M4 3l7.5 17 2.2-6 6 0.6L4 3z"></path>
     </svg>
   </button>
 
-  <button type="button" class="toolbtn" data-tool="node" data-tip="Добавить сущность (Entity)">
+  <button type="button" class="toolbtn" data-tool="node" data-tip="Добавить сущность (Entity) — Hotkey: 2">
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <rect x="5" y="6" width="14" height="12" rx="2"></rect>
       <path d="M5 10h14"></path>
@@ -179,13 +216,21 @@
     </svg>
   </button>
 
-  <button type="button" class="toolbtn" data-tool="link" data-tip="Связь (Link)">
+  <button type="button" class="toolbtn" data-tool="link" data-tip="Связь (Link) — Hotkey: 3">
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path d="M7 12a4 4 0 0 1 4-4h2"></path>
       <path d="M17 12a4 4 0 0 1-4 4h-2"></path>
       <path d="M10 12h4"></path>
       <path d="M14.5 8.5l2-2a3 3 0 0 1 4.2 4.2l-2 2"></path>
       <path d="M9.5 15.5l-2 2a3 3 0 0 1-4.2-4.2l2-2"></path>
+    </svg>
+  </button>
+
+  <button type="button" id="help-btn" class="toolbtn" data-tip="Справка">
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="9"></circle>
+      <path d="M9.6 9.2a2.8 2.8 0 0 1 5 1.2c0 1.8-2 2-2 3.2"></path>
+      <circle cx="12" cy="16.5" r="0.9" fill="none"></circle>
     </svg>
   </button>
 </div>
@@ -218,6 +263,26 @@ email:varchar"></textarea>
   </div>
 
   <div id="entity-editor-error" class="error"></div>
+  </div>
+</div>
+
+<div id="help-modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="help-title">
+  <div class="help-card">
+    <div class="help-header">
+      <h3 id="help-title" class="help-title">Справка по редактору</h3>
+      <button type="button" class="help-close" id="help-close">Закрыть</button>
+    </div>
+    <ul class="help-list">
+      <li>Выбор/перемещение: инструмент Select (Hotkey: 1), тяните entity мышью.</li>
+      <li>Добавить entity: инструмент Entity (Hotkey: 2), клик по холсту.</li>
+      <li>Связь: инструмент Link (Hotkey: 3), два клика по разным entity.</li>
+      <li>Редактирование entity: двойной клик по заголовку.</li>
+      <li>Редактирование поля: двойной клик по строке поля.</li>
+      <li>Удалить связь: двойной клик по линии.</li>
+      <li>Панорамирование: удерживайте правую кнопку мыши и тяните.</li>
+      <li>Масштаб: колесо мыши над холстом.</li>
+      <li>Esc: отмена создания связи и закрытие редактора.</li>
+    </ul>
   </div>
 </div>
 
