@@ -1,4 +1,5 @@
 ﻿const STORAGE_KEY = 'schemeData'
+window.schemeStorageKey = STORAGE_KEY
 
 function loadSchemeData() {
   try {

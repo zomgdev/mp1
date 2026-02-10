@@ -8,14 +8,14 @@ const data = window.schemeData || (window.schemeData = {
   nextEntityId: 1,
   nextLinkNo: 1
 })
-const STORAGE_KEY = 'schemeData'
+const STORAGE_KEY_LOCAL = window.schemeStorageKey || 'schemeData'
 let lastSaved = ''
 
 function saveSchemeData() {
   try {
     const json = JSON.stringify(data)
     if (json !== lastSaved) {
-      localStorage.setItem(STORAGE_KEY, json)
+      localStorage.setItem(STORAGE_KEY_LOCAL, json)
       lastSaved = json
     }
   } catch {}
@@ -33,12 +33,17 @@ const state = {
   selectedLinkIds: new Set(),// выбранные связи (подсветка)
   hoveredLinkId: null,       // связь под курсором
   dragging: false,
+  panning: false,
+  panStart: { x: 0, y: 0 },
+  camStart: { x: 0, y: 0 },
   dragOffset: { x: 0, y: 0 },
   linkDraft: null,           // { from: Node, toPoint:{x,y} }
   editingNode: null,         // редактируемая entity
   refsCache: new Map(),      // Map<nodeId, string[]>
   hoveredRef: null           // { nodeId, targetTitle }
 }
+
+const camera = { x: 0, y: 0 }
 
 /* Функция: подгоняет размеры canvas под окно браузера */
 function resize() {
@@ -105,7 +110,8 @@ function drawBackgroundDots() {
   ctx.save()
   ctx.setTransform(1, 0, 0, 1, 0, 0)
   ctx.fillStyle = bgPattern
-  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.translate(camera.x, camera.y)
+  ctx.fillRect(-camera.x, -camera.y, canvas.width, canvas.height)
   ctx.restore()
 }
 
@@ -489,50 +495,92 @@ function hitLink(x, y) {
 }
 
 /* ================= DRAW ================= */
+const ENTITY_RADIUS = 6
+
+function roundRectPath(ctx, x, y, w, h, r) {
+  const radius = Math.max(0, Math.min(r, Math.min(w, h) / 2))
+  ctx.beginPath()
+  ctx.moveTo(x + radius, y)
+  ctx.lineTo(x + w - radius, y)
+  ctx.quadraticCurveTo(x + w, y, x + w, y + radius)
+  ctx.lineTo(x + w, y + h - radius)
+  ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h)
+  ctx.lineTo(x + radius, y + h)
+  ctx.quadraticCurveTo(x, y + h, x, y + h - radius)
+  ctx.lineTo(x, y + radius)
+  ctx.quadraticCurveTo(x, y, x + radius, y)
+  ctx.closePath()
+}
+
+function roundTopRectPath(ctx, x, y, w, h, r) {
+  const radius = Math.max(0, Math.min(r, Math.min(w, h) / 2))
+  ctx.beginPath()
+  ctx.moveTo(x + radius, y)
+  ctx.lineTo(x + w - radius, y)
+  ctx.quadraticCurveTo(x + w, y, x + w, y + radius)
+  ctx.lineTo(x + w, y + h)
+  ctx.lineTo(x, y + h)
+  ctx.lineTo(x, y + radius)
+  ctx.quadraticCurveTo(x, y, x + radius, y)
+  ctx.closePath()
+}
+
 /* Функция: рисует entity */
 function drawNode(n) {
   const newH = calcNodeHeight(n)
   n.height = newH
 
+  const x = n.x + camera.x
+  const y = n.y + camera.y
+  const w = n.width
+  const h = n.height
+
   ctx.fillStyle = '#ffffff'
-  ctx.fillRect(n.x, n.y, n.width, n.height)
+  roundRectPath(ctx, x, y, w, h, ENTITY_RADIUS)
+  ctx.fill()
 
   ctx.strokeStyle = '#222'
   ctx.lineWidth = 1
-  ctx.strokeRect(n.x, n.y, n.width, n.height)
+  roundRectPath(ctx, x, y, w, h, ENTITY_RADIUS)
+  ctx.stroke()
 
   ctx.fillStyle = '#eeeeee'
-  ctx.fillRect(n.x, n.y, n.width, 24)
-  ctx.strokeRect(n.x, n.y, n.width, 24)
+  roundTopRectPath(ctx, x, y, w, 24, ENTITY_RADIUS)
+  ctx.fill()
+  ctx.strokeStyle = 'rgba(0,0,0,0.15)'
+  ctx.beginPath()
+  ctx.moveTo(x + 1, y + 24)
+  ctx.lineTo(x + w - 1, y + 24)
+  ctx.stroke()
 
   ctx.fillStyle = '#000'
   ctx.font = 'bold 12px sans-serif'
-  ctx.fillText(n.title, n.x + 6, n.y + 16)
+  ctx.fillText(n.title, x + 6, y + 16)
 
   ctx.font = '12px monospace'
   const lineH = 14
   const refLineH = lineH * 2
-  let y = n.y + 40
+  let yCursor = y + 40
 
   n.fields.forEach((f) => {
-    ctx.fillText(`${f.name}: ${f.type}${f.meta ? ' [' + f.meta + ']' : ''}`, n.x + 6, y)
-    y += lineH
+    ctx.fillText(`${f.name}: ${f.type}${f.meta ? ' [' + f.meta + ']' : ''}`, x + 6, yCursor)
+    yCursor += lineH
   })
 
   const refs = state.refsCache.get(n.id) || []
   if (refs.length > 0) {
     ctx.strokeStyle = 'rgba(0,0,0,0.15)'
     ctx.beginPath()
-    ctx.moveTo(n.x + 4, y + 4)
-    ctx.lineTo(n.x + n.width - 4, y + 4)
+    ctx.moveTo(x + 4, yCursor + 4)
+    ctx.lineTo(x + w - 4, yCursor + 4)
     ctx.stroke()
 
-    y += lineH
+    yCursor += lineH
 
     ctx.fillStyle = '#000'
     ctx.font = 'bold 12px sans-serif'
-    ctx.fillText('References:', n.x + 6, y)
-    y += lineH
+    ctx.fillText('References:', x + 6, yCursor)
+    yCursor += lineH
 
     ctx.font = '12px monospace'
     refs.forEach((t) => {
@@ -540,16 +588,16 @@ function drawNode(n) {
       const link = linkId ? state.links.find(l => l.id === linkId) : null
       const num = (link && typeof link.num === 'number' && Number.isFinite(link.num)) ? link.num : null
       const text = num ? `#${num} → ${t}` : `→ ${t}`
-      const textX = n.x + 6
+      const textX = x + 6
       if (state.hoveredRef &&
           state.hoveredRef.nodeId === n.id &&
           state.hoveredRef.targetTitle === t) {
         ctx.fillStyle = 'rgba(255, 241, 150, 0.7)'
-        ctx.fillRect(n.x + 4, y - lineH + 2, n.width - 8, lineH)
+        ctx.fillRect(x + 4, yCursor - lineH + 2, w - 8, lineH)
         ctx.fillStyle = '#000'
       }
-      ctx.fillText(text, textX, y)
-      y += refLineH
+      ctx.fillText(text, textX, yCursor)
+      yCursor += refLineH
     })
   }
 }
@@ -578,15 +626,15 @@ function drawLink(l) {
   ctx.lineJoin = 'round'
 
   ctx.beginPath()
-  ctx.moveTo(ep.p1.x, ep.p1.y)
-  ctx.lineTo(ep.p2.x, ep.p2.y)
+  ctx.moveTo(ep.p1.x + camera.x, ep.p1.y + camera.y)
+  ctx.lineTo(ep.p2.x + camera.x, ep.p2.y + camera.y)
   ctx.stroke()
 
   const startAngle = Math.atan2(ep.startDir.y, ep.startDir.x)
   const endAngle   = Math.atan2(ep.endDir.y, ep.endDir.x)
 
-  drawCardinality(l.fromCardinality, ep.p1.x, ep.p1.y, startAngle)
-  drawCardinality(l.toCardinality, ep.p2.x, ep.p2.y, endAngle)
+  drawCardinality(l.fromCardinality, ep.p1.x + camera.x, ep.p1.y + camera.y, startAngle)
+  drawCardinality(l.toCardinality, ep.p2.x + camera.x, ep.p2.y + camera.y, endAngle)
 
   // Label (link number)
   if (typeof l.num === 'number' && Number.isFinite(l.num)) {
@@ -596,8 +644,8 @@ function drawLink(l) {
     const ny = -(ep.p2.x - ep.p1.x)
     const nlen = Math.hypot(nx, ny) || 1
     const offset = 10
-    const lx = midX + (nx / nlen) * offset
-    const ly = midY + (ny / nlen) * offset
+    const lx = midX + (nx / nlen) * offset + camera.x
+    const ly = midY + (ny / nlen) * offset + camera.y
 
     const label = `#${l.num}`
     ctx.font = '11px sans-serif'
@@ -735,9 +783,21 @@ function editSingleField(node, index) {
 canvas.onmousedown = e => {
   const x = e.offsetX
   const y = e.offsetY
+  const wx = x - camera.x
+  const wy = y - camera.y
+
+  // Right mouse: pan
+  if (e.button === 2) {
+    state.panning = true
+    state.panStart = { x, y }
+    state.camStart = { x: camera.x, y: camera.y }
+    state.dragging = false
+    state.selected = null
+    return
+  }
 
   // Click по списку references — подсветка связи
-  const refHit = hitReference(x, y)
+  const refHit = hitReference(wx, wy)
   if (refHit) {
     const fromNode = state.nodes.find(n => n.id === refHit.nodeId)
     if (fromNode) {
@@ -754,7 +814,7 @@ canvas.onmousedown = e => {
 
   // Select: сначала пробуем попадание по связи
   if (state.tool === 'select') {
-    const link = hitLink(x, y)
+    const link = hitLink(wx, wy)
     if (link) {
       selectLink(link)
       state.dragging = false
@@ -763,13 +823,13 @@ canvas.onmousedown = e => {
     }
   }
 
-  const hit = hitNode(x, y)
+  const hit = hitNode(wx, wy)
 
   // Добавить entity
   if (state.tool === 'node') {
     state.nodes.push({
       id: data.nextEntityId++,
-      x, y,
+      x: wx, y: wy,
       width: 220,
       title: 'Entity',
       fields: [{ name: 'id', type: 'int', meta: 'PK' }]
@@ -781,7 +841,7 @@ canvas.onmousedown = e => {
   if (state.tool === 'link') {
     if (hit) {
       if (!state.linkDraft) {
-        state.linkDraft = { from: hit, toPoint: { x, y } }
+        state.linkDraft = { from: hit, toPoint: { x: wx, y: wy } }
       } else if (state.linkDraft.from !== hit) {
         state.links.push({
           id: crypto.randomUUID(),
@@ -804,7 +864,7 @@ canvas.onmousedown = e => {
     if (hit) {
       state.selected = hit
       state.dragging = true
-      state.dragOffset = { x: x - hit.x, y: y - hit.y }
+      state.dragOffset = { x: wx - hit.x, y: wy - hit.y }
       clearLinkSelection()
       return
     }
@@ -816,15 +876,23 @@ canvas.onmousedown = e => {
 canvas.onmousemove = e => {
   const x = e.offsetX
   const y = e.offsetY
+  const wx = x - camera.x
+  const wy = y - camera.y
 
-  if (state.linkDraft) state.linkDraft.toPoint = { x, y }
+  if (state.panning) {
+    camera.x = state.camStart.x + (x - state.panStart.x)
+    camera.y = state.camStart.y + (y - state.panStart.y)
+    return
+  }
 
-  const refHit = hitReference(x, y)
+  if (state.linkDraft) state.linkDraft.toPoint = { x: wx, y: wy }
+
+  const refHit = hitReference(wx, wy)
   state.hoveredRef = refHit ? { nodeId: refHit.nodeId, targetTitle: refHit.targetTitle } : null
 
   // hover по связи
   if (state.tool === 'select' && !state.dragging && !state.linkDraft) {
-    const link = hitLink(x, y)
+    const link = hitLink(wx, wy)
     state.hoveredLinkId = link ? link.id : null
     canvas.style.cursor = (link || refHit) ? 'pointer' : 'default'
   } else {
@@ -833,27 +901,31 @@ canvas.onmousemove = e => {
   }
 
   if (state.dragging && state.selected) {
-    state.selected.x = x - state.dragOffset.x
-    state.selected.y = y - state.dragOffset.y
+    state.selected.x = wx - state.dragOffset.x
+    state.selected.y = wy - state.dragOffset.y
   }
 }
 
 canvas.onmouseup = () => {
   state.dragging = false
   state.selected = null
+  state.panning = false
 }
 
 canvas.onmouseleave = () => {
   state.hoveredRef = null
   state.hoveredLinkId = null
+  state.panning = false
 }
 
 canvas.ondblclick = e => {
   const x = e.offsetX
   const y = e.offsetY
+  const wx = x - camera.x
+  const wy = y - camera.y
 
   // dblclick по связи — удалить
-  const link = hitLink(x, y)
+  const link = hitLink(wx, wy)
   if (link) {
     state.links = state.links.filter(l => l.id !== link.id)
     if (state.selectedLinkIds.has(link.id)) clearLinkSelection()
@@ -862,16 +934,15 @@ canvas.ondblclick = e => {
   }
 
   // dblclick по entity — редактирование
-  const node = hitNode(x, y)
+  const node = hitNode(wx, wy)
   if (!node) return
 
-  if (y <= node.y + 24) {
-    const t = prompt('Заголовок сущности:', node.title)
-    if (t !== null && t.trim() !== '') node.title = t.trim()
+  if (wy <= node.y + 24) {
+    openEntityEditor(node)
     return
   }
 
-  const idx = Math.floor((y - (node.y + 40)) / 14)
+  const idx = Math.floor((wy - (node.y + 40)) / 14)
   if (idx >= 0 && idx < node.fields.length) {
     editSingleField(node, idx)
     return
@@ -918,8 +989,8 @@ function loop() {
     ctx.lineWidth = 1
     ctx.setLineDash([6, 6])
     ctx.beginPath()
-    ctx.moveTo(p1.x, p1.y)
-    ctx.lineTo(p2.x, p2.y)
+    ctx.moveTo(p1.x + camera.x, p1.y + camera.y)
+    ctx.lineTo(p2.x + camera.x, p2.y + camera.y)
     ctx.stroke()
     ctx.setLineDash([])
   }
