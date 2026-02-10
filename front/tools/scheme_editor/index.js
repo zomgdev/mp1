@@ -643,7 +643,7 @@ function hitLink(x, y) {
 }
 
 /* ================= DRAW ================= */
-const ENTITY_RADIUS = 6
+const ENTITY_RADIUS = 12
 
 function roundRectPath(ctx, x, y, w, h, r) {
   const radius = Math.max(0, Math.min(r, Math.min(w, h) / 2))
@@ -690,7 +690,7 @@ function drawNode(n) {
 
   if (state.selectedNodeId === n.id) {
     ctx.strokeStyle = '#1e88e5'
-    ctx.lineWidth = 2
+    ctx.lineWidth = 1
   } else {
     ctx.strokeStyle = '#222'
     ctx.lineWidth = 1
@@ -701,7 +701,7 @@ function drawNode(n) {
   ctx.fillStyle = '#eeeeee'
   ctx.lineWidth = 1
   const headerH = 24 * view.scale
-  roundTopRectPath(ctx, x, y, w, headerH, ENTITY_RADIUS)
+  roundTopRectPath(ctx, x+1, y+1, w-2, headerH, ENTITY_RADIUS)
   ctx.fill()
   ctx.strokeStyle = 'rgba(0,0,0,0.15)'
   ctx.beginPath()
@@ -717,7 +717,8 @@ function drawNode(n) {
   const bodyFont = Math.max(6, 12 * view.scale)
   ctx.font = `${bodyFont}px monospace`
   const lineH = 14
-  const refLineH = lineH * 2
+  
+  const refLineH = lineH * 2 // было 2
   let yCursor = y + 40 * view.scale
 
   n.fields.forEach((f) => {
