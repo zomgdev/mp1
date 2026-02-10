@@ -30,6 +30,7 @@ const state = {
   links: data.links,
   tool: 'select',
   selected: null,            // выбранная entity для drag
+  selectedNodeId: null,      // выбранная entity для подсветки/свойств
   selectedLinkIds: new Set(),// выбранные связи (подсветка)
   hoveredLinkId: null,       // связь под курсором
   dragging: false,
@@ -46,6 +47,9 @@ const state = {
 const view = { x: 0, y: 0, scale: 1 }
 const MIN_SCALE = 0.3
 const MAX_SCALE = 3
+const propsPanelEl = document.getElementById('properties-panel')
+const propsBodyEl = document.getElementById('properties-body')
+let propsErrorEl = null
 
 function toWorld(x, y) {
   return {
@@ -67,7 +71,8 @@ function clampScale(v) {
 
 /* Функция: подгоняет размеры canvas под окно браузера */
 function resize() {
-  canvas.width = innerWidth
+  const propsWidth = propsPanelEl ? propsPanelEl.offsetWidth : 0
+  canvas.width = Math.max(200, innerWidth - propsWidth)
   canvas.height = innerHeight
   bgPattern = null
 }
@@ -126,6 +131,98 @@ if (helpModal) {
   helpModal.addEventListener('click', (e) => {
     if (e.target === helpModal) closeHelp()
   })
+}
+
+/* ================= PROPERTIES ================= */
+let lastPropsHtml = ''
+
+function setSelectedNode(node) {
+  state.selectedNodeId = node ? node.id : null
+}
+
+function renderProperties() {
+  if (!propsBodyEl) return
+  if (propsBodyEl.contains(document.activeElement)) return
+  const node = state.nodes.find(n => n.id === state.selectedNodeId) || null
+  if (!node) {
+    const emptyHtml = '<div class="prop-empty">Выберите entity, чтобы увидеть свойства.</div>'
+    if (lastPropsHtml !== emptyHtml) {
+      propsBodyEl.innerHTML = emptyHtml
+      propsErrorEl = null
+      lastPropsHtml = emptyHtml
+    }
+    return
+  }
+
+  const refs = state.refsCache.get(node.id) || []
+  const fieldsText = stringifyFields(node.fields)
+  const refsText = refs.length ? refs.join(', ') : '—'
+
+  const html = [
+    '<table class="prop-table">',
+    `<tr><td>ID</td><td><div class="prop-readonly">${node.id}</div></td></tr>`,
+    `<tr><td>Title</td><td><input class="prop-input" data-prop="title" type="text" value="${escapeHtml(node.title)}" /></td></tr>`,
+    `<tr><td>X</td><td><input class="prop-input" data-prop="x" type="number" value="${Math.round(node.x)}" /></td></tr>`,
+    `<tr><td>Y</td><td><input class="prop-input" data-prop="y" type="number" value="${Math.round(node.y)}" /></td></tr>`,
+    `<tr><td>Width</td><td><input class="prop-input" data-prop="width" type="number" value="${Math.round(node.width)}" /></td></tr>`,
+    `<tr><td>Height</td><td><div class="prop-readonly">${Math.round(node.height)}</div></td></tr>`,
+    `<tr><td>Fields</td><td><textarea class="prop-textarea" data-prop="fields">${escapeHtml(fieldsText)}</textarea></td></tr>`,
+    `<tr><td>References</td><td><div class="prop-readonly">${escapeHtml(refsText)}</div></td></tr>`,
+    '</table>',
+    '<div id="props-error" class="prop-error"></div>'
+  ].join('')
+
+  if (lastPropsHtml !== html) {
+    propsBodyEl.innerHTML = html
+    propsErrorEl = document.getElementById('props-error')
+    lastPropsHtml = html
+  }
+}
+
+function escapeHtml(v) {
+  return String(v || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function clearPropsError() {
+  if (propsErrorEl) propsErrorEl.textContent = ''
+}
+
+function setPropsError(msg) {
+  if (propsErrorEl) propsErrorEl.textContent = msg || ''
+}
+
+if (propsBodyEl) {
+  propsBodyEl.addEventListener('input', (e) => {
+    const t = e.target
+    if (!t || !t.dataset || !t.dataset.prop) return
+    const node = state.nodes.find(n => n.id === state.selectedNodeId) || null
+    if (!node) return
+    clearPropsError()
+    const prop = t.dataset.prop
+    if (prop === 'title') node.title = t.value
+    if (prop === 'x') node.x = Number(t.value) || 0
+    if (prop === 'y') node.y = Number(t.value) || 0
+    if (prop === 'width') node.width = Math.max(60, Number(t.value) || 0)
+  })
+
+  propsBodyEl.addEventListener('blur', (e) => {
+    const t = e.target
+    if (!t || !t.dataset || t.dataset.prop !== 'fields') return
+    const node = state.nodes.find(n => n.id === state.selectedNodeId) || null
+    if (!node) return
+    const parsed = parseFieldsText(t.value)
+    if (!parsed.ok) {
+      setPropsError(parsed.error)
+      return
+    }
+    clearPropsError()
+    node.fields = parsed.fields
+  }, true)
 }
 
 /* ================= BACKGROUND DOT GRID ================= */
@@ -591,12 +688,18 @@ function drawNode(n) {
   roundRectPath(ctx, x, y, w, h, ENTITY_RADIUS)
   ctx.fill()
 
-  ctx.strokeStyle = '#222'
-  ctx.lineWidth = 1
+  if (state.selectedNodeId === n.id) {
+    ctx.strokeStyle = '#1e88e5'
+    ctx.lineWidth = 2
+  } else {
+    ctx.strokeStyle = '#222'
+    ctx.lineWidth = 1
+  }
   roundRectPath(ctx, x, y, w, h, ENTITY_RADIUS)
   ctx.stroke()
 
   ctx.fillStyle = '#eeeeee'
+  ctx.lineWidth = 1
   const headerH = 24 * view.scale
   roundTopRectPath(ctx, x, y, w, headerH, ENTITY_RADIUS)
   ctx.fill()
@@ -934,10 +1037,12 @@ canvas.onmousedown = e => {
       state.selected = hit
       state.dragging = true
       state.dragOffset = { x: wx - hit.x, y: wy - hit.y }
+      setSelectedNode(hit)
       clearLinkSelection()
       return
     }
     clearLinkSelection()
+    setSelectedNode(null)
     state.selected = null
   }
 }
@@ -1007,6 +1112,7 @@ canvas.ondblclick = e => {
   // dblclick по entity — редактирование
   const node = hitNode(wx, wy)
   if (!node) return
+  setSelectedNode(node)
 
   if (wy <= node.y + 24) {
     openEntityEditor(node)
@@ -1065,6 +1171,7 @@ function loop() {
 
   state.links.forEach(drawLink)
   state.nodes.forEach(drawNode)
+  renderProperties()
 
   // Пунктир при создании связи (прямая)
   if (state.linkDraft && state.linkDraft.toPoint) {
