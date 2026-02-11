@@ -690,7 +690,7 @@ function drawNode(n) {
 
   if (state.selectedNodeId === n.id) {
     ctx.strokeStyle = '#1e88e5'
-    ctx.lineWidth = 1
+    ctx.lineWidth = 2
   } else {
     ctx.strokeStyle = '#222'
     ctx.lineWidth = 1
@@ -718,7 +718,7 @@ function drawNode(n) {
   ctx.font = `${bodyFont}px monospace`
   const lineH = 14
   
-  const refLineH = lineH * 2 // было 2
+  const refLineH = lineH * 2 
   let yCursor = y + 40 * view.scale
 
   n.fields.forEach((f) => {
