@@ -1,27 +1,37 @@
-﻿const STORAGE_KEY = 'schemeData'
-window.schemeStorageKey = STORAGE_KEY
+const SCHEME_API_URL = '/api/scheme/current'
 
-function loadSchemeData() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return null
-    const parsed = JSON.parse(raw)
-    if (!parsed || typeof parsed !== 'object') return null
-    if (!Array.isArray(parsed.nodes) || !Array.isArray(parsed.links)) return null
-    return {
-      nodes: parsed.nodes,
-      links: parsed.links,
-      nextEntityId: Number.isFinite(parsed.nextEntityId) ? parsed.nextEntityId : 1,
-      nextLinkNo: Number.isFinite(parsed.nextLinkNo) ? parsed.nextLinkNo : 1
-    }
-  } catch {
-    return null
-  }
-}
-
-window.schemeData = loadSchemeData() || {
+window.schemeApiUrl = SCHEME_API_URL
+window.schemeData = {
   nodes: [],
   links: [],
   nextEntityId: 1,
   nextLinkNo: 1
 }
+
+function isValidSchemeData(parsed) {
+  return !!parsed &&
+    typeof parsed === 'object' &&
+    Array.isArray(parsed.nodes) &&
+    Array.isArray(parsed.links)
+}
+
+function mergeSchemeData(target, source) {
+  target.nodes.splice(0, target.nodes.length, ...source.nodes)
+  target.links.splice(0, target.links.length, ...source.links)
+  target.nextEntityId = Number.isFinite(source.nextEntityId) ? source.nextEntityId : 1
+  target.nextLinkNo = Number.isFinite(source.nextLinkNo) ? source.nextLinkNo : 1
+}
+
+async function loadSchemeDataFromServer() {
+  try {
+    const response = await fetch(SCHEME_API_URL, { method: 'GET' })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    const parsed = await response.json()
+    if (!isValidSchemeData(parsed)) throw new Error('Invalid scheme payload')
+    mergeSchemeData(window.schemeData, parsed)
+  } catch (error) {
+    console.error('Failed to load scheme from server:', error)
+  }
+}
+
+window.schemeDataReady = loadSchemeDataFromServer()

@@ -187,14 +187,17 @@
     /* Help modal */
     #help-modal {
       position: fixed;
-      inset: 0;
-      display: flex;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      display: none;
       align-items: center;
       justify-content: center;
       background: rgba(0,0,0,0.35);
       z-index: 50;
     }
-    #help-modal.hidden { display: none; }
+    #help-modal.open { display: flex; }
     .help-card {
       width: min(560px, calc(100vw - 24px));
       background: #fff;
@@ -340,7 +343,7 @@ email:varchar"></textarea>
   </div>
 </div>
 
-<div id="help-modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="help-title">
+<div id="help-modal" role="dialog" aria-modal="true" aria-labelledby="help-title">
   <div class="help-card">
     <div class="help-header">
       <h3 id="help-title" class="help-title">Справка по редактору</h3>

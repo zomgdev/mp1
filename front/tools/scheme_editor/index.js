@@ -8,21 +8,71 @@ const data = window.schemeData || (window.schemeData = {
   nextEntityId: 1,
   nextLinkNo: 1
 })
-const STORAGE_KEY_LOCAL = window.schemeStorageKey || 'schemeData'
+const SCHEME_SAVE_API_URL = window.schemeApiUrl || '/api/scheme/current'
 let lastSaved = ''
+let schemeLoaded = false
+let saveInFlight = false
+let saveQueued = false
+let saveTimer = null
+let schemeDirty = false
 
-function saveSchemeData() {
+Promise.resolve(window.schemeDataReady).finally(() => {
+  schemeLoaded = true
+  try { lastSaved = JSON.stringify(data) } catch {}
+})
+
+async function saveSchemeData() {
+  if (!schemeLoaded) return
   try {
     const json = JSON.stringify(data)
-    if (json !== lastSaved) {
-      localStorage.setItem(STORAGE_KEY_LOCAL, json)
-      lastSaved = json
+    if (json === lastSaved) return
+    if (saveInFlight) {
+      saveQueued = true
+      return
     }
-  } catch {}
+
+    saveInFlight = true
+    const response = await fetch(SCHEME_SAVE_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: json
+    })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    lastSaved = json
+  } catch (error) {
+    console.error('Failed to save scheme:', error)
+  } finally {
+    saveInFlight = false
+    if (saveQueued) {
+      saveQueued = false
+      saveSchemeData()
+    }
+  }
 }
 
-setInterval(saveSchemeData, 1000)
-addEventListener('beforeunload', saveSchemeData)
+addEventListener('beforeunload', () => {
+  if (!schemeLoaded) return
+  try {
+    const json = JSON.stringify(data)
+    if (json === lastSaved) return
+    if (navigator.sendBeacon) {
+      const payload = new Blob([json], { type: 'application/json' })
+      navigator.sendBeacon(SCHEME_SAVE_API_URL, payload)
+    }
+  } catch {}
+})
+
+function requestSchemeSave() {
+  if (!schemeLoaded) return
+  schemeDirty = true
+  if (saveTimer) return
+  saveTimer = setTimeout(() => {
+    saveTimer = null
+    if (!schemeDirty) return
+    schemeDirty = false
+    saveSchemeData()
+  }, 120)
+}
 
 /* ================= STATE ================= */
 const state = {
@@ -84,13 +134,14 @@ const toolStatusEl = document.getElementById('toolstatusValue')
 
 /* Функция: подсветка активной кнопки */
 function setActiveToolButton(tool) {
-  document.querySelectorAll('.toolbtn').forEach(btn => {
+  document.querySelectorAll('.toolbtn[data-tool]').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tool === tool)
   })
 }
 
 /* Функция: переключение инструмента */
 function setTool(tool) {
+  if (tool !== 'select' && tool !== 'node' && tool !== 'link') return
   state.tool = tool
   if (tool !== 'link') state.linkDraft = null
   setActiveToolButton(tool)
@@ -99,7 +150,7 @@ function setTool(tool) {
 
 /* Функция: подписка на клики по панели */
 function initToolPanel() {
-  document.querySelectorAll('.toolbtn').forEach(btn => {
+  document.querySelectorAll('.toolbtn[data-tool]').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.preventDefault()
       e.stopPropagation()
@@ -117,12 +168,12 @@ const helpClose = document.getElementById('help-close')
 
 function openHelp() {
   if (!helpModal) return
-  helpModal.classList.remove('hidden')
+  helpModal.classList.add('open')
 }
 
 function closeHelp() {
   if (!helpModal) return
-  helpModal.classList.add('hidden')
+  helpModal.classList.remove('open')
 }
 
 if (helpBtn) helpBtn.addEventListener('click', openHelp)
@@ -208,6 +259,7 @@ if (propsBodyEl) {
     if (prop === 'x') node.x = Number(t.value) || 0
     if (prop === 'y') node.y = Number(t.value) || 0
     if (prop === 'width') node.width = Math.max(60, Number(t.value) || 0)
+    requestSchemeSave()
   })
 
   propsBodyEl.addEventListener('blur', (e) => {
@@ -222,6 +274,7 @@ if (propsBodyEl) {
     }
     clearPropsError()
     node.fields = parsed.fields
+    requestSchemeSave()
   }, true)
 }
 
@@ -407,6 +460,7 @@ function updateRefsCache() {
 
 /* ================= ENTITY IDS ================= */
 function ensureEntityIds() {
+  let changed = false
   let maxId = 0
   for (const n of state.nodes) {
     if (typeof n.id === 'number' && Number.isFinite(n.id)) {
@@ -418,13 +472,17 @@ function ensureEntityIds() {
     if (n.id === null || n.id === undefined || n.id === '') {
       n.id = next
       next++
+      changed = true
     }
   }
+  if (data.nextEntityId !== next) changed = true
   data.nextEntityId = next
+  return changed
 }
 
 /* ================= LINK NUMBERS ================= */
 function ensureLinkNumbers() {
+  let changed = false
   let maxNum = 0
   for (const l of state.links) {
     if (typeof l.num === 'number' && Number.isFinite(l.num)) {
@@ -436,9 +494,12 @@ function ensureLinkNumbers() {
     if (typeof l.num !== 'number' || !Number.isFinite(l.num)) {
       l.num = next
       next++
+      changed = true
     }
   }
+  if (data.nextLinkNo !== next) changed = true
   data.nextLinkNo = next
+  return changed
 }
 
 /* ================= REFERENCES HIT TEST ================= */
@@ -910,6 +971,7 @@ function applyEntityEditor() {
   }
 
   node.fields = parsed.fields
+  requestSchemeSave()
   closeEntityEditor()
 }
 
@@ -948,6 +1010,7 @@ function editSingleField(node, index) {
   const m = v.match(/^(\w+)\s*:\s*([A-Za-z0-9_]+)(?:\s*\[(.+)\])?$/)
   if (!m) { alert('Неверный формат. Пример: user_id:int [FK]'); return }
   f.name = m[1]; f.type = m[2]; f.meta = m[3] ? m[3].trim() : null
+  requestSchemeSave()
 }
 
 /* ================= EVENTS ================= */
@@ -1007,6 +1070,7 @@ canvas.onmousedown = e => {
       title: `Entity ${newId}`,
       fields: [{ name: 'id', type: 'int', meta: 'PK' }]
     })
+    requestSchemeSave()
     return
   }
 
@@ -1025,6 +1089,7 @@ canvas.onmousedown = e => {
           toCardinality: 'many'
         })
         state.linkDraft = null
+        requestSchemeSave()
       }
       return
     }
@@ -1079,6 +1144,7 @@ canvas.onmousemove = e => {
   if (state.dragging && state.selected) {
     state.selected.x = wx - state.dragOffset.x
     state.selected.y = wy - state.dragOffset.y
+    requestSchemeSave()
   }
 }
 
@@ -1107,6 +1173,7 @@ canvas.ondblclick = e => {
     state.links = state.links.filter(l => l.id !== link.id)
     if (state.selectedLinkIds.has(link.id)) clearLinkSelection()
     if (state.hoveredLinkId === link.id) state.hoveredLinkId = null
+    requestSchemeSave()
     return
   }
 
@@ -1153,7 +1220,7 @@ addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     state.linkDraft = null
     if (editorEl.style.display === 'block') closeEntityEditor()
-    if (helpModal && !helpModal.classList.contains('hidden')) closeHelp()
+    if (helpModal && helpModal.classList.contains('open')) closeHelp()
     clearLinkSelection()
   }
   if (e.key === '1') setTool('select')
@@ -1164,8 +1231,8 @@ addEventListener('keydown', e => {
 /* ================= LOOP ================= */
 function loop() {
   updateRefsCache()
-  ensureEntityIds()
-  ensureLinkNumbers()
+  if (ensureEntityIds()) requestSchemeSave()
+  if (ensureLinkNumbers()) requestSchemeSave()
 
   ctx.clearRect(0, 0, canvas.width, canvas.height)
   drawBackgroundDots()
