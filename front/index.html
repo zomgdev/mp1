@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tree Navigation</title>
+    <title>Front Workspace</title>
     <link rel="stylesheet" href="inc/style.css">
 </head>
 <body>
@@ -11,10 +11,11 @@
         <h2>Navigation</h2>
         <ul id="tree" class="tree"></ul>
     </div>
-    <div class="content">
+    <div id="content" class="content" aria-live="polite">
         <h1>Content Area</h1>
         <p>Click on the navigation items to view content.</p>
     </div>
-    <script src="inc/script.js"></script>
+    <script type="module" src="app/main.js"></script>
+    <script defer src="inc/fallback.js"></script>
 </body>
 </html>
