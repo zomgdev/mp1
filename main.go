@@ -4,10 +4,27 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 )
 
 // TreeData represents the structure of our tree data
 type TreeData map[string]interface{}
+
+const menuDataPath = "./data/front/mainmenu.js"
+
+func loadTreeData(path string) (TreeData, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var treeData TreeData
+	if err := json.Unmarshal(raw, &treeData); err != nil {
+		return nil, err
+	}
+
+	return treeData, nil
+}
 
 func main() {
 	// Serve static files from the front directory
@@ -16,16 +33,10 @@ func main() {
 
 	// API endpoint for tree data
 	http.HandleFunc("/api/tree", func(w http.ResponseWriter, r *http.Request) {
-		// Create the tree data structure
-		treeData := TreeData{
-			"Architecture": []string{"Infra layer", "Management layer", "Data layer", "Process layer"},
-			"Resources/Assets": []string{"Hardware", "Software", "Misc"},
-			"Infra": []string{"Servers", "VMs", "Services", "Environments"},
-			"Manage": []string{"Projects", "Groups"},
-			"Processes": map[string][]string{
-				"Workflow": {"install", "update", "uninstall"},
-				"Actions":  {"start", "stop", "restart"},
-			},
+		treeData, err := loadTreeData(menuDataPath)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("failed to read tree data: %v", err), http.StatusInternalServerError)
+			return
 		}
 
 		// Convert to JSON and send response
