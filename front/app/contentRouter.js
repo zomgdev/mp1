@@ -1,5 +1,7 @@
 const INFRA_LAYER_LABEL = "Infra layer"
 const INFRA_LAYER_SRC = "tools/scheme_editor/index.html"
+const DISCOVERY_LABEL = "Discovery"
+const DISCOVERY_SRC = "tools/discovery/index.html"
 
 function renderDefault(contentRoot) {
   contentRoot.innerHTML = `
@@ -16,21 +18,25 @@ function renderTextContent(contentRoot, { label, path }) {
   `
 }
 
-function renderInfraEditor(contentRoot) {
+function renderEmbeddedTool(contentRoot, { title, src, frameTitle }) {
   contentRoot.innerHTML = `
     <div class="content-toolbar">
-      <h1>Infra layer</h1>
+      <h1>${title}</h1>
       <span class="content-badge">Embedded tool</span>
     </div>
     <div class="content-frame-wrap">
       <iframe
         class="content-frame"
-        src="${INFRA_LAYER_SRC}"
-        title="Infra layer editor"
+        src="${src}"
+        title="${frameTitle}"
         loading="lazy"
       ></iframe>
     </div>
   `
+}
+
+function normalizeLabel(label) {
+  return String(label || "").trim().toLowerCase()
 }
 
 export function createContentRouter(contentRoot) {
@@ -43,8 +49,23 @@ export function createContentRouter(contentRoot) {
         return
       }
 
-      if (node.label === INFRA_LAYER_LABEL) {
-        renderInfraEditor(contentRoot)
+      const normalizedLabel = normalizeLabel(node.label)
+
+      if (normalizedLabel === normalizeLabel(INFRA_LAYER_LABEL)) {
+        renderEmbeddedTool(contentRoot, {
+          title: INFRA_LAYER_LABEL,
+          src: INFRA_LAYER_SRC,
+          frameTitle: "Infra layer editor"
+        })
+        return
+      }
+
+      if (normalizedLabel === normalizeLabel(DISCOVERY_LABEL)) {
+        renderEmbeddedTool(contentRoot, {
+          title: DISCOVERY_LABEL,
+          src: DISCOVERY_SRC,
+          frameTitle: "Discovery tool"
+        })
         return
       }
 

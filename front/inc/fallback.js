@@ -1,7 +1,7 @@
 (function () {
   function renderFallbackTree(treeContainer, contentRoot) {
     var treeData = {
-      "Architecture": ["Infra layer", "Management layer", "Data layer", "Process layer"],
+      "Architecture": ["Discovery", "Infra layer", "Management layer", "Data layer", "Process layer"],
       "Resources/Assets": ["Hardware", "Software", "Misc"],
       "Infra": ["Servers", "VMs", "Services", "Environments"],
       "Manage": ["Projects", "Groups"],
@@ -51,6 +51,14 @@
         contentRoot.innerHTML = [
           '<div class="content-toolbar"><h1>Infra layer</h1><span class="content-badge">Embedded tool</span></div>',
           '<div class="content-frame-wrap"><iframe class="content-frame" src="tools/scheme_editor/index.html" title="Infra layer editor"></iframe></div>'
+        ].join("")
+        return
+      }
+
+      if (String(label || "").toLowerCase() === "discovery") {
+        contentRoot.innerHTML = [
+          '<div class="content-toolbar"><h1>Discovery</h1><span class="content-badge">Embedded tool</span></div>',
+          '<div class="content-frame-wrap"><iframe class="content-frame" src="tools/discovery/index.html" title="Discovery tool"></iframe></div>'
         ].join("")
         return
       }

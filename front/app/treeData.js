@@ -1,5 +1,5 @@
 export const fallbackTreeData = {
-  Architecture: ["Infra layer", "Management layer", "Data layer", "Process layer"],
+  Architecture: ["Discovery", "Infra layer", "Management layer", "Data layer", "Process layer"],
   "Resources/Assets": ["Hardware", "Software", "Misc"],
   Infra: ["Servers", "VMs", "Services", "Environments"],
   Manage: ["Projects", "Groups"],

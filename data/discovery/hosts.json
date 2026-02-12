@@ -1,0 +1,92 @@
+[
+  {
+    "id": 1,
+    "fqdn": "core-sw-01.dc01.local",
+    "ip": "192.168.88.32",
+    "status": "online",
+    "login": "fox",
+    "password": "123321",
+    "key": ""
+  },
+  {
+    "id": 2,
+    "fqdn": "core-sw-02.dc01.local",
+    "ip": "10.10.10.12",
+    "status": "online",
+    "login": "fox",
+    "password": "123321",
+    "key": ""
+  },
+  {
+    "id": 3,
+    "fqdn": "db-primary-01.dc01.local",
+    "ip": "10.10.20.21",
+    "status": "online",
+    "login": "fox",
+    "password": "123321",
+    "key": ""
+  },
+  {
+    "id": 4,
+    "fqdn": "db-replica-01.dc01.local",
+    "ip": "10.10.20.22",
+    "status": "warning",
+    "login": "fox",
+    "password": "123321",
+    "key": ""
+  },
+  {
+    "id": 5,
+    "fqdn": "app-node-01.dc01.local",
+    "ip": "10.10.30.31",
+    "status": "online",
+    "login": "fox",
+    "password": "123321",
+    "key": ""
+  },
+  {
+    "id": 6,
+    "fqdn": "app-node-02.dc01.local",
+    "ip": "10.10.30.32",
+    "status": "online",
+    "login": "fox",
+    "password": "123321",
+    "key": ""
+  },
+  {
+    "id": 7,
+    "fqdn": "mq-broker-01.dc01.local",
+    "ip": "10.10.40.41",
+    "status": "offline",
+    "login": "fox",
+    "password": "123321",
+    "key": ""
+  },
+  {
+    "id": 8,
+    "fqdn": "cache-redis-01.dc01.local",
+    "ip": "10.10.50.51",
+    "status": "online",
+    "login": "fox",
+    "password": "123321",
+    "key": ""
+  },
+  {
+    "id": 9,
+    "fqdn": "cache-redis-02.dc01.local",
+    "ip": "10.10.50.52",
+    "status": "warning",
+    "login": "fox",
+    "password": "123321",
+    "key": ""
+  },
+  {
+    "id": 10,
+    "fqdn": "bastion-01.dc01.local",
+    "ip": "10.10.60.61",
+    "status": "online",
+    "login": "fox",
+    "password": "123321",
+    "key": ""
+  }
+]

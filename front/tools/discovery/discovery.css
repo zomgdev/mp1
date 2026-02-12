@@ -1,0 +1,156 @@
+:root {
+  --bg: #f5f7fb;
+  --surface: #ffffff;
+  --text: #1f2937;
+  --muted: #6b7280;
+  --border: #dbe3ef;
+  --header: #eef3fb;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", Tahoma, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+}
+
+.page {
+  width: min(980px, calc(100% - 32px));
+  margin: 24px 0 0 16px;
+  padding: 0;
+}
+
+h1 {
+  margin: 0 0 16px;
+  font-size: 28px;
+  line-height: 1.2;
+}
+
+.subtitle {
+  margin: 0 0 20px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.table-wrap {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+th {
+  background: var(--header);
+  font-weight: 600;
+}
+
+tbody tr:last-child td {
+  border-bottom: none;
+}
+
+tbody tr {
+  transition: background-color 0.15s ease;
+}
+
+tbody tr:hover {
+  background: #f0f6ff;
+}
+
+tbody tr.table-placeholder-row:hover {
+  background: transparent;
+}
+
+.status-cell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.facts-btn {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  border: 1px solid #b7c7e6;
+  background: #ffffff;
+  color: #1f2937;
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+tbody tr:hover .facts-btn {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.facts-btn:hover {
+  background: #e8f0ff;
+}
+
+.facts-btn:disabled {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: none;
+  cursor: wait;
+}
+
+.facts-panel {
+  margin-top: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 12px 14px;
+}
+
+.facts-panel-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.facts-panel-header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.facts-panel-header small {
+  color: var(--muted);
+}
+
+.facts-content {
+  margin: 0;
+  white-space: pre-wrap;
+  background: #f8fbff;
+  border: 1px solid #e2ecfb;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+.table-placeholder {
+  color: var(--muted);
+  text-align: left;
+}

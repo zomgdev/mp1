@@ -1,6 +1,7 @@
 package filejson
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -11,6 +12,8 @@ func readJSON(path string, out interface{}) error {
 	if err != nil {
 		return err
 	}
+	// Tolerate UTF-8 BOM for files edited by Windows tools.
+	raw = bytes.TrimPrefix(raw, []byte{0xEF, 0xBB, 0xBF})
 
 	return json.Unmarshal(raw, out)
 }

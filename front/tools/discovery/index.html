@@ -1,0 +1,38 @@
+﻿<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Discovery</title>
+  <link rel="stylesheet" href="discovery.css" />
+</head>
+<body>
+  <main class="page">
+    <h1>Discovery</h1>
+    <p class="subtitle">Список обнаруженных узлов</p>
+
+    <div class="table-wrap">
+      <table aria-label="Discovery table">
+        <thead>
+          <tr>
+            <th>id</th>
+            <th>fqdn</th>
+            <th>ip</th>
+            <th>status</th>
+          </tr>
+        </thead>
+        <tbody id="discovery-table-body"></tbody>
+      </table>
+    </div>
+
+    <section id="facts-panel" class="facts-panel" hidden>
+      <div class="facts-panel-header">
+        <h2>Факты хоста</h2>
+        <small id="facts-meta"></small>
+      </div>
+      <pre id="facts-content" class="facts-content"></pre>
+    </section>
+  </main>
+  <script src="discovery.js"></script>
+</body>
+</html>
