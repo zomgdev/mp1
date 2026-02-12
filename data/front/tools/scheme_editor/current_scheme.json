@@ -1,4 +1,111 @@
 {
+  "nodes": [
+    {
+      "fields": [
+        {
+          "meta": "PK",
+          "name": "id",
+          "type": "int"
+        }
+      ],
+      "height": 236,
+      "id": 1,
+      "title": "Главное!",
+      "width": 220,
+      "x": 115,
+      "y": 47
+    },
+    {
+      "fields": [
+        {
+          "meta": "PK",
+          "name": "id",
+          "type": "int"
+        }
+      ],
+      "height": 54,
+      "id": 2,
+      "title": "Entity 2",
+      "width": 220,
+      "x": 1280,
+      "y": 499
+    },
+    {
+      "fields": [
+        {
+          "meta": "PK",
+          "name": "id",
+          "type": "int"
+        }
+      ],
+      "height": 54,
+      "id": 3,
+      "title": "Entity 3",
+      "width": 220,
+      "x": 1437,
+      "y": 116
+    },
+    {
+      "fields": [
+        {
+          "meta": "PK",
+          "name": "id",
+          "type": "int"
+        }
+      ],
+      "height": 124,
+      "id": 4,
+      "title": "Entity 4",
+      "width": 220,
+      "x": 776,
+      "y": 154
+    },
+    {
+      "fields": [
+        {
+          "meta": "PK",
+          "name": "id",
+          "type": "int"
+        }
+      ],
+      "height": 180,
+      "id": 5,
+      "title": "Entity 5",
+      "width": 220,
+      "x": 129,
+      "y": 518
+    },
+    {
+      "fields": [
+        {
+          "meta": "PK",
+          "name": "id",
+          "type": "int"
+        }
+      ],
+      "height": 54,
+      "id": 6,
+      "title": "Entity 6",
+      "width": 220,
+      "x": 409,
+      "y": 338
+    },
+    {
+      "fields": [
+        {
+          "meta": "PK",
+          "name": "id",
+          "type": "int"
+        }
+      ],
+      "height": 152,
+      "id": 7,
+      "title": "Entity 7",
+      "width": 220,
+      "x": 690,
+      "y": 613
+    }
+  ],
   "links": [
     {
       "from": 1,
@@ -23,70 +130,40 @@
       "num": 3,
       "to": 3,
       "toCardinality": "many"
+    },
+    {
+      "from": 1,
+      "fromCardinality": "one",
+      "id": "6f93882f-f38b-4be3-80e2-4c8c1fc5140e",
+      "num": 4,
+      "to": 5,
+      "toCardinality": "many"
+    },
+    {
+      "from": 1,
+      "fromCardinality": "one",
+      "id": "a8010a35-e8dd-40ab-9225-e63b352a1dac",
+      "num": 5,
+      "to": 6,
+      "toCardinality": "many"
+    },
+    {
+      "from": 5,
+      "fromCardinality": "one",
+      "id": "7eae98e0-b18d-4708-8274-fd3d38cf149e",
+      "num": 6,
+      "to": 7,
+      "toCardinality": "many"
+    },
+    {
+      "from": 7,
+      "fromCardinality": "one",
+      "id": "0df9a5fa-b1a9-45be-b996-0167ab68b908",
+      "num": 7,
+      "to": 4,
+      "toCardinality": "many"
     }
   ],
-  "nextEntityId": 5,
-  "nextLinkNo": 4,
-  "nodes": [
-    {
-      "fields": [
-        {
-          "meta": "PK",
-          "name": "id",
-          "type": "int"
-        }
-      ],
-      "height": 152,
-      "id": 1,
-      "title": "Главное!",
-      "width": 220,
-      "x": 130,
-      "y": 228
-    },
-    {
-      "fields": [
-        {
-          "meta": "PK",
-          "name": "id",
-          "type": "int"
-        }
-      ],
-      "height": 54,
-      "id": 2,
-      "title": "Entity 2",
-      "width": 220,
-      "x": 543,
-      "y": 930
-    },
-    {
-      "fields": [
-        {
-          "meta": "PK",
-          "name": "id",
-          "type": "int"
-        }
-      ],
-      "height": 54,
-      "id": 3,
-      "title": "Entity 3",
-      "width": 220,
-      "x": 1439,
-      "y": 673
-    },
-    {
-      "fields": [
-        {
-          "meta": "PK",
-          "name": "id",
-          "type": "int"
-        }
-      ],
-      "height": 124,
-      "id": 4,
-      "title": "Entity 4",
-      "width": 220,
-      "x": 776,
-      "y": 154
-    }
-  ]
+  "nextEntityId": 8,
+  "nextLinkNo": 8
 }
