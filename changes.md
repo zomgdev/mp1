@@ -79,3 +79,30 @@
 
 16. Обновлен `.gitignore`:
    - добавлено правило `data/log/` для исключения логов Discovery из git.
+
+Дата: 2026-02-13
+
+17. Реализован модуль Discovery в UI:
+   - добавлена страница `front/tools/discovery/index.html`;
+   - вынесены стили в `front/tools/discovery/discovery.css`;
+   - добавлено открытие Discovery в правой панели через `contentRouter`.
+
+18. Реализован backend для Discovery:
+   - добавлен `POST /api/discovery/facts` с SSH-выполнением `cat /etc/os-release`;
+   - добавлен `GET /api/discovery/hosts` для выдачи списка хостов;
+   - лог SSH-запросов пишется в `data/log/discovery/discover_YYYYMMDDHHMMSS.log`.
+
+19. Источник данных таблицы вынесен в файл:
+   - добавлен `data/discovery/hosts.json`;
+   - фронтенд Discovery загружает хосты через backend API и рендерит таблицу динамически.
+
+20. Обновлена модель авторизации хостов:
+   - в `hosts.json` добавлены поля `login`, `password`, `key`;
+   - SSH-подключение использует `login/password` хоста из `hosts.json`.
+
+21. Исправлена проблема загрузки hosts:
+   - устранен BOM в `hosts.json`;
+   - в JSON-чтение добавлена защита от BOM в `internal/storage/filejson/json.go`.
+
+22. Обновлен `.gitignore`:
+   - добавлено правило `data/log/`.
