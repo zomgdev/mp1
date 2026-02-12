@@ -6,5 +6,6 @@
   "Processes": {
     "Workflow": ["install", "update", "uninstall"],
     "Actions": ["start", "stop", "restart"]
-  }
+  },
+  "Assets": ["ОС", "Нематериальные"]
 }
