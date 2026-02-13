@@ -1,5 +1,11 @@
 {
-  "1. Архитектура": ["Discovery", "Infra layer", "Management layer", "Data layer", "Process layer"],
+  "1. Архитектура": [
+    "Discovery", 
+    "Infra layer", 
+    "Management layer", 
+    "Data layer", 
+    "Process layer"
+  ],
   "2. Resources/Assets": ["Hardware", "Software", "Misc"],
   "3. Infra": ["Servers", "VMs", "Services", "Environments"],
   "4. Manage": ["Projects", "Groups"],

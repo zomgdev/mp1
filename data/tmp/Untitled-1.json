@@ -1,0 +1,211 @@
+{
+    "nodes": [
+        {
+            "id": 1,
+            "x": 230,
+            "y": 41,
+            "width": 220,
+            "title": "Entity",
+            "fields": [
+                {
+                    "name": "id",
+                    "type": "int",
+                    "meta": "PK"
+                },
+                {
+                    "name": "dd",
+                    "type": "dd",
+                    "meta": "val"
+                }
+            ],
+            "height": 222
+        },
+        {
+            "id": 2,
+            "x": 256,
+            "y": 405,
+            "width": 220,
+            "title": "Entity",
+            "fields": [
+                {
+                    "name": "id",
+                    "type": "int",
+                    "meta": "PK"
+                }
+            ],
+            "height": 54
+        },
+        {
+            "id": 3,
+            "x": 589,
+            "y": 414,
+            "width": 220,
+            "title": "Entity",
+            "fields": [
+                {
+                    "name": "id",
+                    "type": "int",
+                    "meta": "PK"
+                }
+            ],
+            "height": 96
+        },
+        {
+            "id": 4,
+            "x": 890,
+            "y": 310,
+            "width": 220,
+            "title": "Entity",
+            "fields": [
+                {
+                    "name": "id",
+                    "type": "int",
+                    "meta": "PK"
+                }
+            ],
+            "height": 54
+        },
+        {
+            "id": 5,
+            "x": 1045,
+            "y": 135,
+            "width": 220,
+            "title": "Entity",
+            "fields": [
+                {
+                    "name": "id",
+                    "type": "int",
+                    "meta": "PK"
+                }
+            ],
+            "height": 96
+        },
+        {
+            "id": 6,
+            "x": 1050,
+            "y": 517,
+            "width": 220,
+            "title": "Entity23e2",
+            "fields": [
+                {
+                    "name": "id",
+                    "type": "int",
+                    "meta": "PK"
+                }
+            ],
+            "height": 54
+        },
+        {
+            "id": 7,
+            "x": 562,
+            "y": 629,
+            "width": 220,
+            "title": "Entityss",
+            "fields": [
+                {
+                    "name": "id",
+                    "type": "int",
+                    "meta": "PK"
+                }
+            ],
+            "height": 54
+        },
+        {
+            "id": 8,
+            "x": 1250,
+            "y": 690,
+            "width": 220,
+            "title": "Entity",
+            "fields": [
+                {
+                    "name": "id",
+                    "type": "int",
+                    "meta": "PK"
+                }
+            ],
+            "height": 54
+        },
+        {
+            "id": 9,
+            "x": 957,
+            "y": 707,
+            "width": 220,
+            "title": "Entity",
+            "fields": [
+                {
+                    "name": "id",
+                    "type": "int",
+                    "meta": "PK"
+                }
+            ],
+            "height": 54
+        }
+    ],
+    "links": [
+        {
+            "id": "5e4f99fe-f593-4a70-9fb5-8378c2e6ceb0",
+            "from": 1,
+            "to": 2,
+            "num": 1,
+            "fromCardinality": "one",
+            "toCardinality": "many"
+        },
+        {
+            "id": "fac82433-ddf4-4228-9872-50e32c259933",
+            "from": 1,
+            "to": 3,
+            "num": 2,
+            "fromCardinality": "one",
+            "toCardinality": "many"
+        },
+        {
+            "id": "36b9a978-b9fb-451b-ab1a-c76dd97e02fb",
+            "from": 1,
+            "to": 4,
+            "num": 3,
+            "fromCardinality": "one",
+            "toCardinality": "many"
+        },
+        {
+            "id": "c6ecd13d-2acb-439c-a41f-38b5ec8988c0",
+            "from": 1,
+            "to": 4,
+            "num": 4,
+            "fromCardinality": "one",
+            "toCardinality": "many"
+        },
+        {
+            "id": "275772cf-2282-4a1a-94a2-b24f2b67a916",
+            "from": 1,
+            "to": 5,
+            "num": 5,
+            "fromCardinality": "one",
+            "toCardinality": "many"
+        },
+        {
+            "id": "0327668e-8486-47ac-804d-9110bfcc59fa",
+            "from": 5,
+            "to": 4,
+            "num": 6,
+            "fromCardinality": "one",
+            "toCardinality": "many"
+        },
+        {
+            "id": "f031ae2a-3300-44dc-b4c0-a5229aff85c4",
+            "from": 3,
+            "to": 7,
+            "num": 7,
+            "fromCardinality": "one",
+            "toCardinality": "many"
+        }
+    ],
+    "nextEntityId": 10,
+    "nextLinkNo": 8
+}
+
+
+
+
+----------------
+
+{"nodes":[{"id":1,"x":93.01589442509498,"y":680.8775392676966,"width":220,"title":"Entity 1","fields":[{"name":"id","type":"int","meta":"PK"}],"height":236},{"id":2,"x":941.5308250553361,"y":38.50294290530077,"width":220,"title":"Entity 2","fields":[{"name":"id","type":"int","meta":"PK"}],"height":236},{"id":3,"x":748.1656683614417,"y":393.5716091966173,"width":220,"title":"Entity 3","fields":[{"name":"id","type":"int","meta":"PK"}],"height":236},{"id":4,"x":1415.3854895420277,"y":796.6325585321509,"width":220,"title":"Entity 4","fields":[{"name":"id","type":"int","meta":"PK"}],"height":236},{"id":5,"x":76.37689816829845,"y":28.036562826797507,"width":220,"title":"Entity 5","fields":[{"name":"id","type":"int","meta":"PK"}],"height":236},{"id":6,"x":545.1646731674214,"y":1044.7609225215892,"width":220,"title":"Entity 6","fields":[{"name":"id","type":"int","meta":"PK"}],"height":54},{"id":7,"x":1139.9563593459955,"y":1026.4952431233933,"width":220,"title":"Entity 7","fields":[{"name":"id","type":"int","meta":"PK"}],"height":54}],"links":[{"id":"e32175fe-e65a-48a9-88eb-c8af490922a4","from":1,"to":4,"num":1,"fromCardinality":"one","toCardinality":"many"},{"id":"f8b963f3-b09c-46e2-aabf-086ccd1ede9f","from":2,"to":3,"num":2,"fromCardinality":"one","toCardinality":"many"},{"id":"00aadfec-88ad-43dc-a354-f61f2b013117","from":1,"to":3,"num":3,"fromCardinality":"one","toCardinality":"many"},{"id":"d07c9fcd-22e4-4fa6-99c2-a5c953bbf877","from":2,"to":4,"num":4,"fromCardinality":"one","toCardinality":"many"},{"id":"ddb6da5d-8df9-472c-82d8-abc0a0b172ca","from":5,"to":1,"num":5,"fromCardinality":"one","toCardinality":"many"},{"id":"92be9f4d-21d1-4e4f-9bfb-ef8482a60150","from":5,"to":2,"num":6,"fromCardinality":"one","toCardinality":"many"},{"id":"18e054bc-3c30-4fe9-b478-9c5b9f7588f7","from":4,"to":3,"num":7,"fromCardinality":"one","toCardinality":"many"},{"id":"78cf5220-4c80-4a4e-a586-cf8a2ea3144e","from":3,"to":5,"num":8,"fromCardinality":"one","toCardinality":"many"},{"id":"93cc31d0-e08f-4864-84cd-c8e25d802316","from":1,"to":6,"num":9,"fromCardinality":"one","toCardinality":"many"},{"id":"2ffe5c68-fbec-4922-b622-11cc77e9aaa4","from":1,"to":7,"num":10,"fromCardinality":"one","toCardinality":"many"}],"nextEntityId":8,"nextLinkNo":11}
